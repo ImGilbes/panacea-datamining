@@ -11,8 +11,8 @@ therapies_file = "./dataset/therapies.json"
 merged_file = "./dataset/patients.json"
 testcase_file = "./dataset/testcases.txt"
 
-maxcond = 100
-maxtrials = 10 #lets keep this low atm
+maxcond = 30
+maxtrials = 30 #lets keep this low atm
 
 maxtestcases = 3
 testcasespat = []
