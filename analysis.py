@@ -1,6 +1,5 @@
 import json
 from random import shuffle
-import pandas as pd
 import numpy as np
 from sklearn.metrics import mean_squared_error, pairwise
 from sklearn.model_selection import train_test_split
@@ -15,9 +14,12 @@ conditions = dataset["Conditions"]
 therapies = dataset["Therapies"]
 patients = dataset["Patients"]
 
-UxT = pd.DataFrame(index=range(len(patients)), columns=range(len(therapies)), dtype=np.float32 )
-UxC = pd.DataFrame(index=range(len(patients)), columns=range(len(conditions)), dtype= np.float32)
-CxT = pd.DataFrame(index=range(len(conditions)), columns=range(len(therapies)), dtype=np.float32)
+UxT = np.empty((len(patients), len(therapies)))
+UxT[:] = np.NaN
+UxC = np.empty((len(patients), len(conditions)))
+UxC[:] = np.NaN
+CxT = np.empty((len(conditions), len(therapies)))
+CxT[:] = np.NaN
 
 #pandas works with dataframe[cols][rows]
 print(f'len users={len(patients)}, len ther= {len(therapies)}, len cond= {len(conditions)}')
@@ -27,13 +29,13 @@ for pat in patients:
 
     # populate U x T
     for tr in pat["trials"]: #patient therapy matrix
-        UxT.loc[int(pat["id"])][int(tr["therapy"])] = float(tr["successful"]) / 100
+        UxT[int(pat["id"])][int(tr["therapy"])] = float(tr["successful"]) / 100 #since i do /100 it doesnt need normalization
 
     # populate 
     for cd in pat["conditions"]: #patient condition matrix
 
         # UxC contains cured and uncured conditions
-        UxC.loc[int(pat["id"])][int(cd["id"])] = 1.0
+        UxC[int(pat["id"])][int(cd["id"])] = 1.0
 
         # C x T contains ratings of therapies for cured conditions only
         if cd["cured"] == True:
@@ -41,15 +43,35 @@ for pat in patients:
             for tr in pat["trials"]: #for each cured condition
                 if tr["condition"] == cd["id"]: #insert the rating for the therapies that were tried
 
-                    CxT.loc[int(cd["id"])][int(tr["therapy"])] = float(tr["successful"]) / 100
+                    if ~np.isnan(CxT[int(cd["id"])][int(tr["therapy"])]):
+                        CxT[int(cd["id"])][int(tr["therapy"])] = float(tr["successful"]) / 100
+
+                    else:
+                        CxT[int(cd["id"])][int(tr["therapy"])] = float(tr["successful"]) / 100
                     #TO DO : MANAGE DOUBLES (average, weighted average)
 
 print(f'UxT\n {UxT} \nUxC\n {UxC} \nCxT \n{CxT}')
-                    
-# #dataframe.to_numpy()
-npUxT = UxT.to_numpy()
-npUxC = UxC.to_numpy()
-npCxT = CxT.to_numpy()
+
+npUxT = UxT
+npUxC = UxC
+npCxT = CxT
+
+# STANDARDIZATION (useless)
+# mu = np.nanmean(npCxT)
+# std = np.nanstd(npCxT)
+# for i in range(len(conditions)):
+#     for k in range(len(therapies)):
+#         if ~np.isnan( npCxT[i][k] ):
+#             npCxT[i][k] = (npCxT[i][k] - mu) / std
+# print(f'Standardization:\n {npCxT}')
+
+# mu = np.nanmean(npUxT)
+# std = np.nanstd(npUxT)
+# for i in range(len(patients)):
+#     for k in range(len(therapies)):
+#         if ~np.isnan( npUxT[i][k] ):
+#             npUxT[i][k] = (npUxT[i][k] - mu) / std
+# print(f'Standardization:\n {npUxT}')
 
 # # indexes = npUxT != 0 #synonym: np.nonzero(matrix)
 # # mu = npUxT[indexes].mean() #mean without nans
@@ -134,10 +156,11 @@ indices = idx[np.argsort((-npCxT[newcond])[idx])]
 #     print(npCxT[newcond][i])
 
 #give out best therapies! - baseline from UxT
-base_est = muUxT + usrmeanUxT[newpatient]
+# base_est = muUxT + usrmeanUxT[newpatient] - muUxT
+base_est = usrmeanUxT[newpatient]
 print(f'\n{k} best therapies for {conditions[newcond]["name"]}\n')
 for i in indices:
-    print(f'i:{i} -> {therapies[i]["name"]} ->{base_est + thmeanUxT[i]}\n')
+    print(f'i:{i} -> {therapies[i]["name"]} ->{base_est + thmeanUxT[i] - muUxT}\n')
 
 
 
