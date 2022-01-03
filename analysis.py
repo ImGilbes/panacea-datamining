@@ -15,87 +15,129 @@ conditions = dataset["Conditions"]
 therapies = dataset["Therapies"]
 patients = dataset["Patients"]
 
-ratings = pd.DataFrame(index=range(len(patients)), columns=range(len(therapies)), dtype=np.float32 )
-history = pd.DataFrame(index=range(len(patients)), columns=range(len(conditions)), dtype= np.float32)
+UxT = pd.DataFrame(index=range(len(patients)), columns=range(len(therapies)), dtype=np.float32 )
+UxC = pd.DataFrame(index=range(len(patients)), columns=range(len(conditions)), dtype= np.float32)
+CxT = pd.DataFrame(index=range(len(conditions)), columns=range(len(therapies)), dtype=np.float32)
 
 #pandas works with dataframe[cols][rows]
 print(f'len users={len(patients)}, len ther= {len(therapies)}, len cond= {len(conditions)}')
-
+print(f'UxT {UxT.shape} UxC {UxC.shape} CxT {CxT.shape}')
 
 for pat in patients:
-    id = int(pat["id"])
 
+    # populate U x T
     for tr in pat["trials"]: #patient therapy matrix
+        UxT.loc[int(pat["id"])][int(tr["therapy"])] = float(tr["successful"]) / 100
 
-        th = int(tr["therapy"]) #get the therapy id
-        ratings.loc[th][id] = float(tr["successful"]) / 100
-
+    # populate 
     for cd in pat["conditions"]: #patient condition matrix
 
-        cond = int(cd["id"])
-        history.loc[cond][id] = 1.0
+        # UxC contains cured and uncured conditions
+        UxC.loc[int(pat["id"])][int(cd["id"])] = 1.0
 
-# ratings.loc[2][1] = 0.1
+        # C x T contains ratings of therapies for cured conditions only
+        if cd["cured"] == True:
 
-#dataframe.to_numpy()
-npratings = ratings.to_numpy()
+            for tr in pat["trials"]: #for each cured condition
+                if tr["condition"] == cd["id"]: #insert the rating for the therapies that were tried
 
-#np.nan
-mu = np.nanmean(npratings)
-thmu = np.nanmean(npratings, axis= 0)
-usrmu = np.nanmean(npratings, axis= 1)
-# indexes = npratings != 0 #synonym: np.nonzero(matrix)
-# mu = npratings[indexes].mean()
+                    CxT.loc[int(cd["id"])][int(tr["therapy"])] = float(tr["successful"]) / 100
+                    #TO DO : MANAGE DOUBLES (average, weighted average)
 
-print(f'mu= {mu:.6f}, thmu = {thmu[0]:.6f}, thmulen= {len(thmu)}, usrmu= {usrmu[0]:.6f}, usrlen =  {len(usrmu)}')
+print(f'UxT\n {UxT} \nUxC\n {UxC} \nCxT \n{CxT}')
+                    
+# #dataframe.to_numpy()
+npUxT = UxT.to_numpy()
+npUxC = UxC.to_numpy()
+npCxT = CxT.to_numpy()
 
-np.nan_to_num(npratings, copy=False, nan=0.0)
-np.nan_to_num(thmu, copy=False, nan=0.0)
-np.nan_to_num(usrmu, copy=False, nan=0.0)
-ratings.fillna(0)
-# print(ratings)
-# print(npratings)
-print(f'usrmu {usrmu.shape}=\n{usrmu}\nthmu {thmu.shape}=\n{thmu}')
+# # indexes = npUxT != 0 #synonym: np.nonzero(matrix)
+# # mu = npUxT[indexes].mean() #mean without nans
+# #np.nan - mean without nans
 
-# print(history)
+muUxT = np.nanmean(npUxT)
+thmeanUxT = np.nanmean(npUxT, axis= 0)
+usrmeanUxT = np.nanmean(npUxT, axis= 1)
 
-user_sim= pairwise.cosine_similarity(npratings)
-th_sim = pairwise.cosine_similarity(npratings.T)
-# print(user_sim, th_sim)
-print(f'user similaty{user_sim.shape}:\n{user_sim} \n\n itemsim{th_sim.shape}=\n{th_sim}')
+np.nan_to_num(npUxT, copy=False, nan=0.0)
+np.nan_to_num(thmeanUxT, copy=False, nan=0.0)
+np.nan_to_num(usrmeanUxT, copy=False, nan=0.0)
+np.nan_to_num(npUxT, copy=False, nan=0.0)
+# UxT.fillna(0)
 
-# predict user ratings not included in data
-predictions = user_sim.dot(npratings) / np.array( [np.abs(user_sim).sum(axis=1)] ).T
-np.nan_to_num(predictions, copy=False, nan=0.0)
+# print(f'UxT:\n mu= {mu:.6f}, thmu = {thmu[0]:.6f}, thmulen= {len(thmu)}, usrmu= {usrmu[0]:.6f}, usrlen =  {len(usrmu)}')
+
+# muCxT = np.nanmean(npCxT)
+# thmeanCxT = np.nanmean(npCxT, axis= 0)
+# condmeanCxT = np.nanmean(npCxT, axis=1)
+#THEY CAN STILL CONTAIN NANS - DO THIS TO REPLACE THEM
+# np.nan_to_num(muCxT, copy=False, nan=0.0)
+# np.nan_to_num(thmeanCxT, copy=False, nan=0.0)
+# np.nan_to_num(condmeanCxT, copy=False, nan=0.0)
+np.nan_to_num(npCxT, copy=False, nan=0.0)
+
+# print(f'CxT:\n mu= {muCxT:.6f},\n thmu = {thmeanCxT},\n thmulen= {len(thmeanCxT)},\n condmu= {condmeanCxT},\n condmulen =  {len(condmeanCxT)}\n')
+
+
+
+# UxTuser_sim= pairwise.cosine_similarity(npUxT)
+# UxTth_sim = pairwise.cosine_similarity(npUxT.T)
+# print(f'UxTuser_sim{UxTuser_sim.shape}:\n{UxTuser_sim} \n\n UxTth_sim{UxTth_sim.shape}=\n{UxTth_sim}')
+
+# UxCcond_sim = pairwise.cosine_similarity(npUxC)
+# UxCth_sim = pairwise.cosine_similarity(npUxC.T)
+# print(f'CxTcond_sim{UxCcond_sim.shape}:\n{UxCcond_sim} \n\n UxCth_sim{UxCth_sim.shape}=\n{UxCth_sim}')
+
+# CxTcond_sim = pairwise.cosine_similarity(npCxT)
+# CxTth_sim = pairwise.cosine_similarity(npCxT.T)
+# print(f'CxTcond_sim{CxTcond_sim.shape}:\n{CxTcond_sim} \n\n CxTth_sim{CxTth_sim.shape}=\n{CxTth_sim}')
+
+
+
+# predict user UxT not included in data
+# predictions = user_sim.dot(npUxT) / np.array( [np.abs(user_sim).sum(axis=1)] ).T
+# np.nan_to_num(predictions, copy=False, nan=0.0)
 # print(predictions)
 
-# nprattrain, nprattest = train_test_split(npratings, test_size=0.5, shuffle=False)
+# nprattrain, nprattest = train_test_split(npUxT, test_size=0.5, shuffle=False)
 # user_sim= pairwise.cosine_similarity(nprattrain)
-# test_pred = user_sim.dot(npratings) / np.array( [np.abs(user_sim).sum(axis=1)] ).T
+# test_pred = user_sim.dot(npUxT) / np.array( [np.abs(user_sim).sum(axis=1)] ).T
 # print(test_pred, test_pred.shape)
 
-nonzero_ratings = npratings[npratings.nonzero()]
-nonzero_predictions = predictions[npratings.nonzero()]
+# nonzero_UxT = npUxT[npUxT.nonzero()]
+# nonzero_predictions = predictions[npUxT.nonzero()]
 
-mse = mean_squared_error(nonzero_ratings, nonzero_predictions)
+# mse = mean_squared_error(nonzero_UxT, nonzero_predictions)
 # print(mse)
 
-nphistory = history.to_numpy()
-np.nan_to_num(nphistory, copy=False, nan=0.0)
-# print(nphistory[nphistory.nonzero()])
-user_sim_history = pairwise.cosine_similarity(nphistory)
-# print(f'user history similarity {user_sim_history.shape}:\n {user_sim_history}')
+# npUxC = UxC.to_numpy()
+# np.nan_to_num(npUxC, copy=False, nan=0.0)
+# # print(npUxC[npUxC.nonzero()])
+# user_sim_UxC = pairwise.cosine_similarity(npUxC)
+# # print(f'user UxC similarity {user_sim_UxC.shape}:\n {user_sim_UxC}')
 
-#baseline estimates for the user
 newpatient = int(sys.argv[1])
-# newcond = int(sys.argv[2])
-newth = int(sys.argv[2]) #let's pretend we a therapy
-baselineusr = mu + usrmu[newpatient] 
-print(f'base line evaluation: {baselineusr}')
+newcond = int(sys.argv[2])
 
-estimate = baselineusr + np.dot(npratings.T[newpatient], th_sim[newth]) / np.sum(th_sim[newth])
-print(f'\nuser {newpatient} th {newth} estimate: {estimate}:\n {np.dot(npratings.T[newpatient], th_sim[newth])}/{np.sum(th_sim[newth])}')
+# estimate = baselineusr + np.dot(npUxT.T[newpatient], th_sim[newth]) / np.sum(th_sim[newth])
+# print(f'\nuser {newpatient} th {newth} estimate: {estimate}:\n {np.dot(npUxT.T[newpatient], th_sim[newth])}/{np.sum(th_sim[newth])}')
 
+newpatient = int(sys.argv[1])
+newcond = int(sys.argv[2])
+
+print(f'{npCxT[newcond]}\n{len(npCxT[newcond])}')
+k = 5 #find the indices of the k max values in array - It works https://www.kite.com/python/answers/how-to-find-the-n-maximum-indices-of-a-numpy-array-in-python
+idx=np.argpartition(npCxT[newcond], len(npCxT[newcond]) - k)[-k:]
+indices = idx[np.argsort((-npCxT[newcond])[idx])]
+# print(indices)
+# for i in indices:
+#     print(npCxT[newcond][i])
+
+#give out best therapies! - baseline from UxT
+base_est = muUxT + usrmeanUxT[newpatient]
+print(f'\n{k} best therapies for {conditions[newcond]["name"]}\n')
+for i in indices:
+    print(f'i:{i} -> {therapies[i]["name"]} ->{base_est + thmeanUxT[i]}\n')
 
 
 
