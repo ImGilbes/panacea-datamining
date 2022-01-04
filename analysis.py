@@ -1,6 +1,7 @@
 import json
 from random import shuffle
 import numpy as np
+from numpy.core.fromnumeric import shape
 from sklearn.metrics import mean_squared_error, pairwise
 from sklearn.model_selection import train_test_split
 import sys
@@ -100,11 +101,11 @@ np.nan_to_num(UxT, copy=False, nan=0.0)
 
 # muCxT = np.nanmean(CxT)
 # thmeanCxT = np.nanmean(CxT, axis= 0)
-# condmeanCxT = np.nanmean(CxT, axis=1)
+condmeanCxT = np.nanmean(CxT, axis=1)
 #THEY CAN STILL CONTAIN NANS - DO THIS TO REPLACE THEM
 # np.nan_to_num(muCxT, copy=False, nan=0.0)
 # np.nan_to_num(thmeanCxT, copy=False, nan=0.0)
-# np.nan_to_num(condmeanCxT, copy=False, nan=0.0)
+np.nan_to_num(condmeanCxT, copy=False, nan=0.0)
 np.nan_to_num(CxT, copy=False, nan=0.0)
 
 # print(f'CxT:\n mu= {muCxT:.6f},\n thmu = {thmeanCxT},\n thmulen= {len(thmeanCxT)},\n condmu= {condmeanCxT},\n condmulen =  {len(condmeanCxT)}\n')
@@ -112,7 +113,7 @@ np.nan_to_num(CxT, copy=False, nan=0.0)
 
 
 # UxTuser_sim= pairwise.cosine_similarity(UxT)
-# UxTth_sim = pairwise.cosine_similarity(UxT.T)
+UxTth_sim = pairwise.cosine_similarity(UxT.T)
 # print(f'UxTuser_sim{UxTuser_sim.shape}:\n{UxTuser_sim} \n\n UxTth_sim{UxTth_sim.shape}=\n{UxTth_sim}')
 
 # UxCcond_sim = pairwise.cosine_similarity(UxC)
@@ -156,20 +157,73 @@ newcond = int(sys.argv[2])
 newpatient = int(sys.argv[1])
 newcond = int(sys.argv[2])
 
-print(f'{CxT[newcond]}\n{len(CxT[newcond])}')
-k = 5 #find the indices of the k max values in array - It works https://www.kite.com/python/answers/how-to-find-the-n-maximum-indices-of-a-numpy-array-in-python
+# print(f'{CxT[newcond]}\n{len(CxT[newcond])}')
+k = 10 #find the indices of the k max values in array - It works https://www.kite.com/python/answers/how-to-find-the-n-maximum-indices-of-a-numpy-array-in-python
+k = np.count_nonzero(CxT[newcond]) #define neighbours as the tested therapies for the given condition
 idx=np.argpartition(CxT[newcond], len(CxT[newcond]) - k)[-k:]
 indices = idx[np.argsort((-CxT[newcond])[idx])]
-# print(indices)
-# for i in indices:
-#     print(CxT[newcond][i])
 
 #give out best therapies! - baseline from UxT
-# base_est = muUxT + usrmeanUxT[newpatient] - muUxT
-base_est = usrmeanUxT[newpatient]
-print(f'\n{k} best therapies for {conditions[newcond]["name"]}\n')
+# base_est = muUxT + usrmeanUxT[newpatient] - muUxT + thmeanUxT[i] - muUxT
+
+cosine_predictions = UxTth_sim.dot(UxT.T) / np.array( [np.abs(UxTth_sim).sum(axis=0)] ).T
+cosine_predictions = cosine_predictions.T # because i want patients on the rows
+
+est = []
+
+mse_est_base = [] # dot product on neighbour set only (tested therapies for the input condition)
+mse_est_pred = [] # dot product on whole matrix
+
 for i in indices:
-    print(f'i:{i} -> {therapies[i]["name"]} ->{base_est + thmeanUxT[i] - muUxT}\n')
+    
+    if(UxT[newpatient][i] == 0):
+    # if(True):
+
+        bxi = usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT
+        
+        # NEIGHBOURS ONLY DOT PRODUCT
+        # cosine_est = 0
+        # cos_sum = 0
+        # for p in indices:
+        #     if p != i:
+        #         cos_sum = cos_sum + UxTth_sim[i][p]
+        #         cosine_est = cosine_est + ( UxT[newpatient][p] * UxTth_sim[i][p] )
+        # cosine_est = cosine_est / cos_sum # dot product / sum of similarities
+        # est.append((i, bxi + cosine_est) )
+
+        est.append( (i, bxi + cosine_predictions[newpatient][i]) )
+
+        # print(cosine_est, cosine_predictions[newpatient][i])
+        # mse_est_base.append(bxi + cosine_est)
+        # mse_est_pred.append( bxi + cosine_predictions[newpatient][i])
+
+    else:
+        #TO DO: MODEL INTERACTION WITH OLD ESTIMATES! RIGHT NOW, OLD JUST SUBSTITUTE ESTIMATES
+        est.append((i, UxT[newpatient][i]))
+
+        # mse_est_base.append( UxT[newpatient][i])
+        # mse_est_pred.append( UxT[newpatient][i])
+
+est.sort(key=lambda tup: tup[1], reverse=True) #sort by baseline rating
+
+k = 5
+print(f'\n{k} best therapies for {conditions[newcond]["name"]}\n')
+for (i, val) in est[:k]:
+    print(f'{i} -> {therapies[i]["name"]} ->{val}\n')
+    
+    # print(CxT[newcond], f'mean CxT{i}: {CxT[newcond].mean(), condmeanCxT[newcond]}')
+
+# print(UxT[newpatient])
+# print(CxT[newcond])
 
 
+# nonzero_UxT = UxT[UxT.nonzero()]
+# nonzero_predictions = predictions[UxT.nonzero()]
 
+# mse = mean_squared_error(nonzero_UxT, nonzero_predictions)
+
+
+#  c = [a[index] for index in b] GET SUBLIST OF A LIST FROM LIST OF INDEXES
+# MSE_base = mean_squared_error(mse_est_base, [UxT[newpatient][app] for app in indices])
+# MSE_pred = mean_squared_error(mse_est_pred, [UxT[newpatient][app] for app in indices])
+# print(f'MSE_base={MSE_base}, MSE_pred={MSE_pred}')

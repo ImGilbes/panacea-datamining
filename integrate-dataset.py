@@ -188,9 +188,8 @@ def main():
         fp.write(json.dumps( { "Conditions": condlist, "Therapies": thlist, "Patients": patients}, indent=4 ))
 
     with open(testcase_file, "w+") as fp:
-        for i in testcasespat:
-            print(f"{testcasespat[i]},{testcasescond[i]}\n")
-            fp.write(f"{testcasespat[i]},{testcasescond[i]}\n")
+        for i, k in zip(testcasespat, testcasescond):
+            fp.write(f"{i},{k}\n")
 
 if __name__=="__main__":
     main()
