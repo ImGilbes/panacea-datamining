@@ -6,6 +6,8 @@ from sklearn.metrics import mean_squared_error, pairwise
 from sklearn.model_selection import train_test_split
 import sys
 
+from torch._C import dtype
+
 datapath = "../data/patients.json"
 
 with open(datapath, "r") as fp:
@@ -96,16 +98,14 @@ print(f'UxT\n {UxT} \nUxC\n {UxC} \nCxT \n{CxT}')
 # # mu = UxT[indexes].mean() #mean without nans
 # #np.nan - mean without nans
 
-
-
-# np.nan_to_num(muUxT, copy=False, nan=0.0)
-# np.nan_to_num(thmeanUxT, copy=False, nan=0.0)
-# np.nan_to_num(usrmeanUxT, copy=False, nan=0.0)
-np.nan_to_num(UxT, copy=False, nan=0.0)
-
 muUxT = np.nanmean(UxT)
 thmeanUxT = np.nanmean(UxT, axis= 0)
 usrmeanUxT = np.nanmean(UxT, axis= 1)
+
+np.nan_to_num(muUxT, copy=False, nan=0.0)
+np.nan_to_num(thmeanUxT, copy=False, nan=0.0)
+np.nan_to_num(usrmeanUxT, copy=False, nan=0.0)
+np.nan_to_num(UxT, copy=False, nan=0.0)
 # UxT.fillna(0)
 
 # print(f'UxT:\n mu= {mu:.6f}, thmu = {thmu[0]:.6f}, thmulen= {len(thmu)}, usrmu= {usrmu[0]:.6f}, usrlen =  {len(usrmu)}')
@@ -252,17 +252,104 @@ nonzero_i = np.intersect1d(indices, np.nonzero(UxT[newpatient]))
 # print(nonzero_i)
 for i in nonzero_i:
     # bxi = condmeanCxT[newcond] + thmeanCxT[i] - muCxT
-    # bxi = usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT
-
-    # new baseline 0
-
-    bxi = muUxT + thmeanUxT[i] - thmeanUxT[i].mean() + usrmeanUxT[newpatient] - usrmeanUxT[newpatient].mean()
+    bxi = usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT
+    # bxi = muUxT + thmeanUxT[i] - thmeanUxT[i].mean() + usrmeanUxT[newpatient] - usrmeanUxT[newpatient].mean()
     
+    # bxi = muUxT + thmeanUxT[i] - muUxT + usrmeanUxT[newpatient] - muUxT + condmeanCxT[newcond] - muCxT + thmeanCxT[i] - muCxT
+
     print(bxi)
     pred = bxi + cosine_predictions[newpatient][i]
     mse_est_pred.append(pred)
 
-MSE_pred = mean_squared_error(mse_est_pred, [UxT[newpatient][app] for app in nonzero_i])
+MSE_pred = np.sqrt( mean_squared_error(mse_est_pred, [UxT[newpatient][app] for app in nonzero_i]))
 
 print(f'predictions = {mse_est_pred}\nreal values= {[UxT[newpatient][app] for app in nonzero_i]}')
 print(f'MSE_pred={MSE_pred}')
+
+
+# provo a rifare le predizioni con ML
+import torch
+import torch.nn as nn
+import numpy as np
+import math
+from torch.nn.modules.module import Module
+from torch.utils.data import Dataset, DataLoader
+
+# step 1: targets are the set of nonzero therapies for the current patient
+rated_ths = UxT[newpatient][np.nonzero(UxT[newpatient])]
+y = torch.from_numpy(rated_ths).float()
+
+#r(x,j) - b(x,j)
+biases = []
+for i in np.nonzero(UxT[newpatient]):
+    biases.append(usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT)
+biases = np.asarray_chkfinite(biases)
+
+x = rated_ths - biases
+x = torch.from_numpy(x).float()
+x = x[0]
+print(x)
+w = torch.ones(len(rated_ths), dtype=torch.float32, requires_grad = True)
+
+
+bxi = muUxT + usrmeanUxT[newpatient] - muUxT
+
+def forward(x):
+
+    return torch.dot(w, x)
+
+def my_mse_loss(y, y_predicted):
+    return ((y_predicted - y)**2).mean()
+
+learning_rate = 0.01
+n_epochs = 100
+# print(f'Pprediction before training: f(5)={forward(torch.tensor(np.array([5]), dtype=torch.float32))}')
+for epoch in range(n_epochs):
+
+    y_pred = forward(x)
+
+    loss = my_mse_loss(y, y_pred)
+
+    loss.backward()
+
+    with torch.no_grad(): #it sshould not be part of the computational graph 
+        w -= learning_rate * w.grad
+
+    w.grad.zero_()
+
+    if epoch % (n_epochs/10) == 0:
+        print(f'{epoch}: w ={w}, loss ={loss:.8f}')
+
+# print(f'Prediction after training: f(5)={forward(5)}')
+# insize = len(x)
+# outsize = 1
+# model = nn.Linear(insize, outsize)
+
+# criterion = nn.MSELoss()
+
+# learning_rate = 0.01
+# optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+
+
+# nepochs = 50
+# for epoch in range(nepochs):
+
+#     prediction = model(x)
+#     error = criterion(prediction, y)
+
+#     #backprop
+#     error.backward()
+
+#     #update
+#     optimizer.step()
+
+#     optimizer.zero_grad()
+
+#     if epoch %(nepochs/10) == 0:
+#         print(f'epoch: {epoch}, loss= {error.item():.8f}')
+
+
+# pred = model(x).detach().numpy() #generates a new tensor without grandient required thing
+# # plt.plot(xnp, ynp, 'ro') #plot dataset
+# # plt.plot(xnp, pred, 'b') #plot current trained model
+# # plt.show()
