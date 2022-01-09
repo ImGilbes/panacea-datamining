@@ -1,5 +1,7 @@
+
 import json
 from random import shuffle
+from re import X
 import numpy as np
 from numpy.core.fromnumeric import shape
 from sklearn.metrics import mean_squared_error, pairwise
@@ -98,6 +100,8 @@ print(f'UxT\n {UxT} \nUxC\n {UxC} \nCxT \n{CxT}')
 # # mu = UxT[indexes].mean() #mean without nans
 # #np.nan - mean without nans
 
+
+np.nan_to_num(UxT, copy=False, nan=0.0)
 muUxT = np.nanmean(UxT)
 thmeanUxT = np.nanmean(UxT, axis= 0)
 usrmeanUxT = np.nanmean(UxT, axis= 1)
@@ -105,11 +109,11 @@ usrmeanUxT = np.nanmean(UxT, axis= 1)
 np.nan_to_num(muUxT, copy=False, nan=0.0)
 np.nan_to_num(thmeanUxT, copy=False, nan=0.0)
 np.nan_to_num(usrmeanUxT, copy=False, nan=0.0)
-np.nan_to_num(UxT, copy=False, nan=0.0)
 # UxT.fillna(0)
 
 # print(f'UxT:\n mu= {mu:.6f}, thmu = {thmu[0]:.6f}, thmulen= {len(thmu)}, usrmu= {usrmu[0]:.6f}, usrlen =  {len(usrmu)}')
 
+np.nan_to_num(CxT, copy=False, nan=0.0)
 muCxT = np.nanmean(CxT)
 thmeanCxT = np.nanmean(CxT, axis= 0)
 condmeanCxT = np.nanmean(CxT, axis=1)
@@ -117,10 +121,8 @@ condmeanCxT = np.nanmean(CxT, axis=1)
 np.nan_to_num(muCxT, copy=False, nan=0.0)
 np.nan_to_num(thmeanCxT, copy=False, nan=0.0)
 np.nan_to_num(condmeanCxT, copy=False, nan=0.0)
-np.nan_to_num(CxT, copy=False, nan=0.0)
 
 # print(f'CxT:\n mu= {muCxT:.6f},\n thmu = {thmeanCxT},\n thmulen= {len(thmeanCxT)},\n condmu= {condmeanCxT},\n condmulen =  {len(condmeanCxT)}\n')
-
 
 
 # UxTuser_sim= pairwise.cosine_similarity(UxT)
@@ -168,7 +170,7 @@ newcond = int(sys.argv[2])
 # print(f'{CxT[newcond]}\n{len(CxT[newcond])}')
 k = 10 #find the indices of the k max values in array - It works https://www.kite.com/python/answers/how-to-find-the-n-maximum-indices-of-a-numpy-array-in-python
 k = np.count_nonzero(CxT[newcond]) #define neighbours as the tested therapies for the given condition
-print(k)
+
 idx=np.argpartition(CxT[newcond], len(CxT[newcond]) - k)[-k:]
 indices = idx[np.argsort((-CxT[newcond])[idx])]
 
@@ -176,12 +178,13 @@ indices = idx[np.argsort((-CxT[newcond])[idx])]
 # base_est = muUxT + usrmeanUxT[newpatient] - muUxT + thmeanUxT[i] - muUxT
 
 #cosine pred with values in U x T
+# r_hat(x, i) = b(x, i) + sum( sim(i, j) * (UxT(x, j) - b(x, j)) ) / sum( sim(i, j) ) 
 cosine_predictions = UxTth_sim.dot(UxT.T) / np.array( [np.abs(UxTth_sim).sum(axis=0)] ).T
 
 #cosine pred with values in C x T - let's tryyy
 # cosine_predictions = CxTth_sim.dot(UxT.T) / np.array( [np.abs(CxTth_sim).sum(axis=0)] ).T
 
-cosine_predictions = cosine_predictions.T # because i want patients on the rows
+cosine_predictions = cosine_predictions.T # because i want patients on the rows (dim: U x T)
 
 est = []
 
@@ -247,17 +250,12 @@ for count, (i, val) in enumerate(est[:k]):
 # correct mse (i need compare methods):
 mse_est_pred = []
 nonzero_i = np.intersect1d(indices, np.nonzero(UxT[newpatient]))
-# print(indices)
-# print(np.nonzero(UxT[newpatient]))
-# print(nonzero_i)
+
 for i in nonzero_i:
-    # bxi = condmeanCxT[newcond] + thmeanCxT[i] - muCxT
     bxi = usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT
-    # bxi = muUxT + thmeanUxT[i] - thmeanUxT[i].mean() + usrmeanUxT[newpatient] - usrmeanUxT[newpatient].mean()
     
     # bxi = muUxT + thmeanUxT[i] - muUxT + usrmeanUxT[newpatient] - muUxT + condmeanCxT[newcond] - muCxT + thmeanCxT[i] - muCxT
-
-    print(bxi)
+    
     pred = bxi + cosine_predictions[newpatient][i]
     mse_est_pred.append(pred)
 
@@ -268,6 +266,8 @@ print(f'MSE_pred={MSE_pred}')
 
 
 # provo a rifare le predizioni con ML
+# r_hat(x, i) = b(x, i) + sum( w(i, j) * (r(x, j) - b(x, j)) )
+# r_hat(x, i) = b(x, i) + dot(w(i), r(x) - b(x))
 import torch
 import torch.nn as nn
 import numpy as np
@@ -276,80 +276,121 @@ from torch.nn.modules.module import Module
 from torch.utils.data import Dataset, DataLoader
 
 # step 1: targets are the set of nonzero therapies for the current patient
-rated_ths = UxT[newpatient][np.nonzero(UxT[newpatient])]
-y = torch.from_numpy(rated_ths).float()
+# UxT[new patient] = [ r 0 0 0 r r r 0 r ... 0 0 r 0] (r = rating)
+
+# rated_ths = UxT[newpatient][np.nonzero(UxT[newpatient])]
+# y = torch.from_numpy(rated_ths).float()
+
+y = torch.from_numpy(UxT[newpatient]).float()
 
 #r(x,j) - b(x,j)
 biases = []
-for i in np.nonzero(UxT[newpatient]):
+# for i in np.nonzero(UxT[newpatient]):
+for i in range(len(UxT[newpatient])): 
     biases.append(usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT)
 biases = np.asarray_chkfinite(biases)
 
-x = rated_ths - biases
+# [ r-b 0 0 0 r-b r-b r-b ... 0]
+x = UxT[newpatient]
+for ind in range(len(therapies)):
+    if x[ind] > 0:
+        x[ind] = x[ind] - biases[ind]
 x = torch.from_numpy(x).float()
-x = x[0]
-print(x)
-w = torch.ones(len(rated_ths), dtype=torch.float32, requires_grad = True)
 
+x = torch.reshape(x, (-1, 1))
+y = torch.reshape(y, (-1, 1))
 
-bxi = muUxT + usrmeanUxT[newpatient] - muUxT
+class LinearRegression(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(LinearRegression, self).__init__()
+        self.linear = nn.Linear(input_dim, output_dim)
 
-def forward(x):
+    def forward(self, x):
+        return self.linear(x)
 
-    return torch.dot(w, x)
-
-def my_mse_loss(y, y_predicted):
-    return ((y_predicted - y)**2).mean()
+model = LinearRegression(1 ,1)
 
 learning_rate = 0.01
-n_epochs = 100
-# print(f'Pprediction before training: f(5)={forward(torch.tensor(np.array([5]), dtype=torch.float32))}')
-for epoch in range(n_epochs):
+iter = 1000
 
-    y_pred = forward(x)
+loss = nn.MSELoss()
 
-    loss = my_mse_loss(y, y_pred)
+optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
-    loss.backward()
+for epoch in range(iter):
 
-    with torch.no_grad(): #it sshould not be part of the computational graph 
-        w -= learning_rate * w.grad
+    y_pred = model(x)
+    
+    tmp_loss = loss(y, y_pred)
+    
+    tmp_loss.backward() #backprop and gradient are done automatically like this
 
-    w.grad.zero_()
+    #update the weights
+    optimizer.step()
+    
+    #zero gradients- clear them, they must not be accumulated
+    optimizer.zero_grad()
 
-    if epoch % (n_epochs/10) == 0:
-        print(f'{epoch}: w ={w}, loss ={loss:.8f}')
-
-# print(f'Prediction after training: f(5)={forward(5)}')
-# insize = len(x)
-# outsize = 1
-# model = nn.Linear(insize, outsize)
-
-# criterion = nn.MSELoss()
-
-# learning_rate = 0.01
-# optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+    if epoch % (iter/10) == 0:
+        [w, b] = model.parameters()
+        print(f'{epoch}: w ={w[0][0].item()}, loss ={tmp_loss:.8f}')
 
 
-# nepochs = 50
-# for epoch in range(nepochs):
+# print(f'{y}\n{biases}\n{UxT[newpatient]}\n{x}')
+# print(f'{len(y)}\n{len(biases)}\n{len(UxT[newpatient])}\n{len(x)}')
 
-#     prediction = model(x)
-#     error = criterion(prediction, y)
+# # w = torch.rand(len(rated_ths), dtype=torch.float32, requires_grad = True).float()
+# w = torch.zeros(len(therapies), dtype=torch.float32, requires_grad = True)
+# print(f'{w}\n len of w={len(w)}')
 
-#     #backprop
-#     error.backward()
+# def forward(x):
+#     return w * x
+#     # return torch.dot(w, x)
+#     # return torch.sum(w * x)
 
-#     #update
-#     optimizer.step()
+# def my_mse_loss(y, y_predicted):
+#     return ((y_predicted - y)**2).mean()
+#     # return ((y_predicted - y)**2).sum()
 
-#     optimizer.zero_grad()
+# print(f'\nbefore training\ntarget={y}\n\n prediction={forward(x)}')
+# # for ind in range(len(therapies)):
+# #     print(f'target={y[ind]}, prediction={forward(x) + biases[ind]}')
 
-#     if epoch %(nepochs/10) == 0:
-#         print(f'epoch: {epoch}, loss= {error.item():.8f}')
+# learning_rate = 0.1 # -> 0.001, 0.01; 0.5, 0.001
+# n_epochs = 10
+# for epoch in range(n_epochs):
 
+#     y_pred = forward(x)
 
-# pred = model(x).detach().numpy() #generates a new tensor without grandient required thing
-# # plt.plot(xnp, ynp, 'ro') #plot dataset
-# # plt.plot(xnp, pred, 'b') #plot current trained model
-# # plt.show()
+#     loss = my_mse_loss(y[ind], y_pred)
+#     # loss_synonym = my_mse_loss(y[ind], torch.dot(w, x) + biases[ind])
+
+#     # print(f'target={y[ind]}, prediction={y_pred}, loss = {my_mse_loss(y, y_pred)}')
+#     loss.backward() # backprop, before this w.grad doesn't exist
+#     # torch.nn.utils.clip_grad_norm_(w)
+#     with torch.no_grad(): #it should not be part of the computational graph 
+#         w.sub_(w.grad * learning_rate) # update weights inplace
+#         # print(w)
+#         w.grad.zero_()
+    
+
+    # for ind in range(len(therapies)): # faccio le stime colonna per colonna
+    #     if UxT[newpatient][ind] > 0:
+
+    #         y_pred = forward(x) + biases[ind]
+    #         # y_pred = forward(x)
+
+    #         loss = my_mse_loss(y[ind], y_pred)
+    #         loss_synonym = my_mse_loss(y[ind], torch.dot(w, x) + biases[ind])
+
+    #         # print(f'target={y[ind]}, prediction={y_pred}, loss = {my_mse_loss(y, y_pred)}')
+    #         loss.backward() # backprop, before this w.grad doesn't exist
+    
+    #         with torch.no_grad(): #it should not be part of the computational graph 
+    #             w.sub_(w.grad * learning_rate) # update weights inplace
+    #             w.grad.zero_()
+            
+    #         print(w)
+
+    # if epoch % (n_epochs/10) == 0:
+    #     print(f'{epoch}: w ={w}, loss ={loss:.8f}')
