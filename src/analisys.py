@@ -114,18 +114,18 @@ np.nan_to_num(usrmeanUxT, copy=False, nan=0.0)
 # print(f'UxT:\n mu= {mu:.6f}, thmu = {thmu[0]:.6f}, thmulen= {len(thmu)}, usrmu= {usrmu[0]:.6f}, usrlen =  {len(usrmu)}')
 
 np.nan_to_num(CxT, copy=False, nan=0.0)
-muCxT = np.nanmean(CxT)
-thmeanCxT = np.nanmean(CxT, axis= 0)
-condmeanCxT = np.nanmean(CxT, axis=1)
+# muCxT = np.nanmean(CxT)
+# thmeanCxT = np.nanmean(CxT, axis= 0)
+# condmeanCxT = np.nanmean(CxT, axis=1)
 #THEY CAN STILL CONTAIN NANS - DO THIS TO REPLACE THEM
-np.nan_to_num(muCxT, copy=False, nan=0.0)
-np.nan_to_num(thmeanCxT, copy=False, nan=0.0)
-np.nan_to_num(condmeanCxT, copy=False, nan=0.0)
+# np.nan_to_num(muCxT, copy=False, nan=0.0)
+# np.nan_to_num(thmeanCxT, copy=False, nan=0.0)
+# np.nan_to_num(condmeanCxT, copy=False, nan=0.0)
 
 # print(f'CxT:\n mu= {muCxT:.6f},\n thmu = {thmeanCxT},\n thmulen= {len(thmeanCxT)},\n condmu= {condmeanCxT},\n condmulen =  {len(condmeanCxT)}\n')
 
 
-# UxTuser_sim= pairwise.cosine_similarity(UxT)
+UxTuser_sim= pairwise.cosine_similarity(UxT)
 UxTth_sim = pairwise.cosine_similarity(UxT.T)
 # print(f'UxTuser_sim{UxTuser_sim.shape}:\n{UxTuser_sim} \n\n UxTth_sim{UxTth_sim.shape}=\n{UxTth_sim}')
 
@@ -134,7 +134,7 @@ UxTth_sim = pairwise.cosine_similarity(UxT.T)
 # print(f'CxTcond_sim{UxCcond_sim.shape}:\n{UxCcond_sim} \n\n UxCth_sim{UxCth_sim.shape}=\n{UxCth_sim}')
 
 # CxTcond_sim = pairwise.cosine_similarity(CxT)
-CxTth_sim = pairwise.cosine_similarity(CxT.T)
+# CxTth_sim = pairwise.cosine_similarity(CxT.T)
 # print(f'CxTcond_sim{CxTcond_sim.shape}:\n{CxTcond_sim} \n\n CxTth_sim{CxTth_sim.shape}=\n{CxTth_sim}')
 
 
@@ -179,51 +179,35 @@ indices = idx[np.argsort((-CxT[newcond])[idx])]
 
 #cosine pred with values in U x T
 # r_hat(x, i) = b(x, i) + sum( sim(i, j) * (UxT(x, j) - b(x, j)) ) / sum( sim(i, j) ) 
-cosine_predictions = UxTth_sim.dot(UxT.T) / np.array( [np.abs(UxTth_sim).sum(axis=0)] ).T
+# cosine_predictions = UxTth_sim.dot(UxT.T) / np.array( [np.abs(UxTth_sim).sum(axis=0)] ).T
 
 #cosine pred with values in C x T - let's tryyy
 # cosine_predictions = CxTth_sim.dot(UxT.T) / np.array( [np.abs(CxTth_sim).sum(axis=0)] ).T
 
-cosine_predictions = cosine_predictions.T # because i want patients on the rows (dim: U x T)
+# cosine_predictions = cosine_predictions.T # because i want patients on the rows (dim: U x T)
 
 est = []
 
-# mse_est_base = [] # dot product on neighbour set only (tested therapies for the input condition)
-# mse_est_pred = [] # dot product on whole matrix
+mse_est_pred = []
 
 for i in indices: # for all the therapies that have been used the input condition
     
     if(UxT[newpatient][i] == 0): # for the therapies those therapies that the patient hasn't tried yet
     # if(True):
 
-        # baseline with values in U x T
-        bxi = usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT
-
-        # baseline with values in C x T
-        # bxi = condmeanCxT[newcond] + thmeanCxT[i] - muCxT
-
-        # NEIGHBOURS ONLY DOT PRODUCT
-        # cosine_est = 0
-        # cos_sum = 0
-        # for p in indices:
-        #     if p != i:
-        #         cos_sum = cos_sum + UxTth_sim[i][p]
-        #         cosine_est = cosine_est + ( UxT[newpatient][p] * UxTth_sim[i][p] )
-        # cosine_est = cosine_est / cos_sum # dot product / sum of similarities
-        # est.append((i, bxi + cosine_est) )
-
-        est.append( (i, bxi + cosine_predictions[newpatient][i]) )
-
-        # print(cosine_est, cosine_predictions[newpatient][i])
-        # mse_est_base.append(bxi + cosine_est)
-        # mse_est_pred.append( bxi + cosine_predictions[newpatient][i])
+        #item based
+        # cur_pred = thmeanUxT[i] + np.sum((UxT[newpatient] - thmeanUxT) * UxTth_sim[i]) / np.sum(np.abs(UxTth_sim[i]))
+        #user based
+        cur_pred = usrmeanUxT[newpatient] + (np.sum((UxT.T[i] - usrmeanUxT) * UxTuser_sim[newpatient]) / np.sum(np.abs(UxTuser_sim[newpatient])))
+        est.append( (i, cur_pred) )
+        mse_est_pred.append(cur_pred)
 
     else:
         #TO DO: MODEL INTERACTION WITH OLD ratings! RIGHT NOW OLD JUST SUBSTITUTE predictions
         est.append((i, UxT[newpatient][i]))
 
         # mse_est_base.append( UxT[newpatient][i])
-        # mse_est_pred.append( UxT[newpatient][i])
+        mse_est_pred.append( UxT[newpatient][i])
 
 est.sort(key=lambda tup: tup[1], reverse=True) # sort by baseline rating
 
@@ -234,117 +218,130 @@ for count, (i, val) in enumerate(est[:k]):
     
     # print(CxT[newcond], f'mean CxT{i}: {CxT[newcond].mean(), condmeanCxT[newcond]}')
 
-# print(UxT[newpatient])
-# print(CxT[newcond])
-
-
 # nonzero_UxT = UxT[UxT.nonzero()]
 # nonzero_predictions = predictions[UxT.nonzero()]
 
 # mse = mean_squared_error(nonzero_UxT, nonzero_predictions)
 
-
 #  c = [a[index] for index in b] GET SUBLIST OF A LIST FROM LIST OF INDEXES
 # numpy.where(x == 0)[0] indices of the elements that are zero
 
 # correct mse (i need compare methods):
-mse_est_pred = []
-nonzero_i = np.intersect1d(indices, np.nonzero(UxT[newpatient]))
+# mse_est_pred2 = []
+# # nonzero_i = np.intersect1d(indices, np.nonzero(UxT[newpatient]))
+# nonzero_i = np.nonzero(UxT[newpatient])
+# for th_i in nonzero_i:
+#     #user based
+#     cur_pred = usrmeanUxT[newpatient] + (np.sum((UxT.T[th_i] - usrmeanUxT) * UxTuser_sim[newpatient]) / np.sum(np.abs(UxTuser_sim[newpatient])))
+#     mse_est_pred2.append(cur_pred)
 
-for i in nonzero_i:
-    bxi = usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT
-    
-    # bxi = muUxT + thmeanUxT[i] - muUxT + usrmeanUxT[newpatient] - muUxT + condmeanCxT[newcond] - muCxT + thmeanCxT[i] - muCxT
-    
-    pred = bxi + cosine_predictions[newpatient][i]
-    mse_est_pred.append(pred)
+#     #item based
+#     # cur_pred = thmeanUxT[th_i] + np.sum((UxT[newpatient] - thmeanUxT) * UxTth_sim[th_i]) / np.sum(np.abs(UxTth_sim[th_i]))
+#     # mse_est_pred2.append(cur_pred)
 
-MSE_pred = np.sqrt( mean_squared_error(mse_est_pred, [UxT[newpatient][app] for app in nonzero_i]))
+MSE_pred = np.sqrt( mean_squared_error(mse_est_pred, [UxT[newpatient][app] for app in indices]))
 
-print(f'predictions = {mse_est_pred}\nreal values= {[UxT[newpatient][app] for app in nonzero_i]}')
+# print(f'predictions = {mse_est_pred}\nreal values= {[UxT[newpatient][app] for app in indices]}')
 print(f'MSE_pred={MSE_pred}')
 
 
-# provo a rifare le predizioni con ML
-# r_hat(x, i) = b(x, i) + sum( w(i, j) * (r(x, j) - b(x, j)) )
-# r_hat(x, i) = b(x, i) + dot(w(i), r(x) - b(x))
-import torch
-import torch.nn as nn
-import numpy as np
-import math
-from torch.nn.modules.module import Module
-from torch.utils.data import Dataset, DataLoader
+# # provo a rifare le predizioni con ML
+# # r_hat(x, i) = b(x, i) + sum( w(i, j) * (r(x, j) - b(x, j)) )
+# # r_hat(x, i) = b(x, i) + dot(w(i), r(x) - b(x))
+# import torch
+# import torch.nn as nn
+# import numpy as np
+# import math
+# from torch.nn.modules.module import Module
+# from torch.utils.data import Dataset, DataLoader
 
-# step 1: targets are the set of nonzero therapies for the current patient
-# UxT[new patient] = [ r 0 0 0 r r r 0 r ... 0 0 r 0] (r = rating)
+# # step 1: targets are the set of nonzero therapies for the current patient
+# # UxT[new patient] = [ r 0 0 0 r r r 0 r ... 0 0 r 0] (r = rating)
 
-# rated_ths = UxT[newpatient][np.nonzero(UxT[newpatient])]
-# y = torch.from_numpy(rated_ths).float()
+# # rated_ths = UxT[newpatient][np.nonzero(UxT[newpatient])]
+# # y = torch.from_numpy(rated_ths).float()
 
-y = torch.from_numpy(UxT[newpatient]).float()
+# y = torch.from_numpy(UxT[newpatient]).float()
 
-#r(x,j) - b(x,j)
-biases = []
-# for i in np.nonzero(UxT[newpatient]):
-for i in range(len(UxT[newpatient])): 
-    biases.append(usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT)
-biases = np.asarray_chkfinite(biases)
+# #r(x,j) - b(x,j)
+# # biases = []
+# # # for i in np.nonzero(UxT[newpatient]):
+# # for i in range(len(UxT[newpatient])): 
+# #     biases.append(usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT)
+# # biases = np.asarray_chkfinite(biases)
 
-# [ r-b 0 0 0 r-b r-b r-b ... 0]
-x = UxT[newpatient]
-for ind in range(len(therapies)):
-    if x[ind] > 0:
-        x[ind] = x[ind] - biases[ind]
-x = torch.from_numpy(x).float()
+# # # [ r-b 0 0 0 r-b r-b r-b ... 0]
+# # x = UxT[newpatient]
+# # for ind in range(len(therapies)):
+# #     if x[ind] > 0:
+# #         x[ind] = x[ind] - biases[ind]
 
-# x = torch.reshape(x, (-1, 1))
-y = torch.reshape(y, (-1, 1))
+# #itembased
+# # [ r-b 0 0 0 r-b r-b r-b ... 0]
+# x = UxT[newpatient] - thmeanUxT
+# x = torch.from_numpy(x).float()
 
-class LinearRegression(nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(LinearRegression, self).__init__()
-        # self.linear = nn.Linear(input_dim, output_dim)
-        self.linear = nn.Linear(len(therapies), 1)
+
+# # x = torch.reshape(x, (-1, 1))
+# y = torch.reshape(y, (-1, 1))
+
+# class LinearRegression(nn.Module):
+#     def __init__(self, input_dim, output_dim):
+#         super(LinearRegression, self).__init__()
+#         # self.linear = nn.Linear(input_dim, output_dim)
+#         self.linear = nn.Linear(input_dim, output_dim)
         
 
-    def forward(self, x):
-        # return torch.sum(self.linear(x))
-        return self.linear(x)
+#     def forward(self, x, i):
+#         # return self.linear(x)
         
-        # return torch.sum(x * self.linear.weight)
+#         return thmeanUxT[i] + self.linear(x) # itembased
+#         # return usrmeanUxT[newpatient] + self.linear(x) # userbased
 
-model = LinearRegression(1 ,1)
+# model = LinearRegression(len(therapies), 1) #item based
+# # model = LinearRegression(len(patients), 1) #user based
 
-learning_rate = 0.01
-iter = 100
+# learning_rate = 0.00001
+# iter = 100
 
-loss = nn.MSELoss()
+# loss = nn.MSELoss()
 
-optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+# optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
-for epoch in range(iter):
-    for i, cury in enumerate(y):
-        # print(i, cury)
-        if cury > 0:
-
-            y_pred = model(x) + usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT
-            # print(cury, y_pred)
-            tmp_loss = loss(cury, y_pred)
-            print(f'y={cury}, pred={y_pred}, loss={tmp_loss}')
-
-            tmp_loss.backward() #backprop and gradient are done automatically like this
-
-            #update the weights
-            optimizer.step()
-            # print("\n")
-            # print(model.linear.weight)
-            # print(model.linear.weight.grad)
-            #zero gradients- clear them, they must not be accumulated
-
+# for epoch in range(iter):
+#     for i, cury in enumerate(y):
+#         # print(i, cury)
+#         if cury > 0:
             
-            # if epoch % (iter/10) == 0:
-            #     [w, b] = model.parameters()
-            #     print(f'\n{y_pred}, {cury}')
-            #     print(f'{epoch}: loss ={tmp_loss:.8f}')
-            #     # print(f'{epoch}: w ={w[0][0].item()}, grad={model.linear.weight.grad}, loss ={tmp_loss:.8f}')
-            optimizer.zero_grad()
+#             #usrbased
+#             # x = UxT.T[i] - usrmeanUxT
+#             # x = torch.from_numpy(x).float()
+
+#             y_pred = model(x, i)
+            
+#             # print(cury, y_pred)
+#             tmp_loss = loss(cury, y_pred)
+#             print(f'y={cury}, pred={y_pred}, loss={tmp_loss}')
+
+#             tmp_loss.backward()
+
+#             optimizer.step()
+
+#             optimizer.zero_grad()
+
+# with torch.no_grad():
+#     mse_est_predML = []
+#     nonzero_i = np.nonzero(UxT[newpatient])
+#     x = UxT[newpatient] - thmeanUxT
+#     x = torch.from_numpy(x).float()
+#     for i in indices:
+#         # x = UxT.T[i] - usrmeanUxT
+#         # x = torch.from_numpy(x).float()
+
+#         y_pred = model(x, i)
+#         mse_est_predML.append(y_pred.detach().numpy())
+
+#     MSE_predML = np.sqrt( mean_squared_error(mse_est_predML, [UxT[newpatient][app] for app in indices]))
+
+#     print(f'predictionsML = {mse_est_predML}\nreal values= {[UxT[newpatient][app] for app in indices]}')
+#     print(f'MSE_predML={MSE_predML}')
