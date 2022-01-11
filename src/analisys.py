@@ -297,100 +297,54 @@ for ind in range(len(therapies)):
         x[ind] = x[ind] - biases[ind]
 x = torch.from_numpy(x).float()
 
-x = torch.reshape(x, (-1, 1))
+# x = torch.reshape(x, (-1, 1))
 y = torch.reshape(y, (-1, 1))
 
 class LinearRegression(nn.Module):
     def __init__(self, input_dim, output_dim):
         super(LinearRegression, self).__init__()
-        self.linear = nn.Linear(input_dim, output_dim)
+        # self.linear = nn.Linear(input_dim, output_dim)
+        self.linear = nn.Linear(len(therapies), 1)
+        
 
     def forward(self, x):
+        # return torch.sum(self.linear(x))
         return self.linear(x)
+        
+        # return torch.sum(x * self.linear.weight)
 
 model = LinearRegression(1 ,1)
 
 learning_rate = 0.01
-iter = 1000
+iter = 100
 
 loss = nn.MSELoss()
 
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
 for epoch in range(iter):
+    for i, cury in enumerate(y):
+        # print(i, cury)
+        if cury > 0:
 
-    y_pred = model(x)
-    
-    tmp_loss = loss(y, y_pred)
-    
-    tmp_loss.backward() #backprop and gradient are done automatically like this
+            y_pred = model(x) + usrmeanUxT[newpatient] + thmeanUxT[i] - muUxT
+            # print(cury, y_pred)
+            tmp_loss = loss(cury, y_pred)
+            print(f'y={cury}, pred={y_pred}, loss={tmp_loss}')
 
-    #update the weights
-    optimizer.step()
-    
-    #zero gradients- clear them, they must not be accumulated
-    optimizer.zero_grad()
+            tmp_loss.backward() #backprop and gradient are done automatically like this
 
-    if epoch % (iter/10) == 0:
-        [w, b] = model.parameters()
-        print(f'{epoch}: w ={w[0][0].item()}, loss ={tmp_loss:.8f}')
+            #update the weights
+            optimizer.step()
+            # print("\n")
+            # print(model.linear.weight)
+            # print(model.linear.weight.grad)
+            #zero gradients- clear them, they must not be accumulated
 
-
-# print(f'{y}\n{biases}\n{UxT[newpatient]}\n{x}')
-# print(f'{len(y)}\n{len(biases)}\n{len(UxT[newpatient])}\n{len(x)}')
-
-# # w = torch.rand(len(rated_ths), dtype=torch.float32, requires_grad = True).float()
-# w = torch.zeros(len(therapies), dtype=torch.float32, requires_grad = True)
-# print(f'{w}\n len of w={len(w)}')
-
-# def forward(x):
-#     return w * x
-#     # return torch.dot(w, x)
-#     # return torch.sum(w * x)
-
-# def my_mse_loss(y, y_predicted):
-#     return ((y_predicted - y)**2).mean()
-#     # return ((y_predicted - y)**2).sum()
-
-# print(f'\nbefore training\ntarget={y}\n\n prediction={forward(x)}')
-# # for ind in range(len(therapies)):
-# #     print(f'target={y[ind]}, prediction={forward(x) + biases[ind]}')
-
-# learning_rate = 0.1 # -> 0.001, 0.01; 0.5, 0.001
-# n_epochs = 10
-# for epoch in range(n_epochs):
-
-#     y_pred = forward(x)
-
-#     loss = my_mse_loss(y[ind], y_pred)
-#     # loss_synonym = my_mse_loss(y[ind], torch.dot(w, x) + biases[ind])
-
-#     # print(f'target={y[ind]}, prediction={y_pred}, loss = {my_mse_loss(y, y_pred)}')
-#     loss.backward() # backprop, before this w.grad doesn't exist
-#     # torch.nn.utils.clip_grad_norm_(w)
-#     with torch.no_grad(): #it should not be part of the computational graph 
-#         w.sub_(w.grad * learning_rate) # update weights inplace
-#         # print(w)
-#         w.grad.zero_()
-    
-
-    # for ind in range(len(therapies)): # faccio le stime colonna per colonna
-    #     if UxT[newpatient][ind] > 0:
-
-    #         y_pred = forward(x) + biases[ind]
-    #         # y_pred = forward(x)
-
-    #         loss = my_mse_loss(y[ind], y_pred)
-    #         loss_synonym = my_mse_loss(y[ind], torch.dot(w, x) + biases[ind])
-
-    #         # print(f'target={y[ind]}, prediction={y_pred}, loss = {my_mse_loss(y, y_pred)}')
-    #         loss.backward() # backprop, before this w.grad doesn't exist
-    
-    #         with torch.no_grad(): #it should not be part of the computational graph 
-    #             w.sub_(w.grad * learning_rate) # update weights inplace
-    #             w.grad.zero_()
             
-    #         print(w)
-
-    # if epoch % (n_epochs/10) == 0:
-    #     print(f'{epoch}: w ={w}, loss ={loss:.8f}')
+            # if epoch % (iter/10) == 0:
+            #     [w, b] = model.parameters()
+            #     print(f'\n{y_pred}, {cury}')
+            #     print(f'{epoch}: loss ={tmp_loss:.8f}')
+            #     # print(f'{epoch}: w ={w[0][0].item()}, grad={model.linear.weight.grad}, loss ={tmp_loss:.8f}')
+            optimizer.zero_grad()
