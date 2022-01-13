@@ -139,7 +139,6 @@ def main():
     smallerUxT = np.array( [UxT[i] for i in lshUxT[UxT[newpatient]]] )
     print(f'LSH bucket dim={len(lshUxT[UxT[newpatient]])}, \n {smallerUxT}')
 
-
     #input nxm
     #nxk, k, kxm
     # u, s, vh = randomized_svd(smallerUxT, n_components=20, n_iter=2, random_state=42)
@@ -161,7 +160,6 @@ def main():
     #         print(smallerUxT[0][i],"  ",b[0][i])
 
     num_latent_fact = 100
-  
     
     # p_param = torch.from_numpy(u).float()
     # q_param = torch.from_numpy(q).float()
@@ -183,7 +181,7 @@ def main():
         return torch.mm(p_param, q_param)#+B_global+B_user+B_item
 
     learning_rate = 1
-    n_epochs = 100
+    n_epochs = 10
 
     def loss(y, y_pred):
         return ((y_pred - y)**2).mean()
@@ -193,7 +191,7 @@ def main():
         prediction = forward()
         l = loss(target[target.nonzero(as_tuple=True)], prediction[target.nonzero(as_tuple=True)])
 
-        print(f'loss={l}')
+        # print(f'loss={l}')
         l.backward()
 
         with torch.no_grad():
@@ -208,10 +206,8 @@ def main():
         if epoch == 18000:
             learning_rate = 0.01
             
-    
     # with torch.no_grad():
     #     x_hat = torch.mm(p_param, q_param).detach().numpy()
-
     # print(x_hat)
     # print("\n\n")
     # a = loss(smallerUxT[2][np.nonzero(smallerUxT[2])], x_hat[2][np.nonzero(smallerUxT[2])])
@@ -226,21 +222,15 @@ def main():
     # print(f'{smallerUxT[0][np.nonzero(smallerUxT[0])]}\n{x_hat[0][np.nonzero(smallerUxT[0])]}')
     # print(a)
 
-    
-
-    # 1) cosine distances U x T
-    # 2) lsh on C x T
+    # 1) cosine distances U x T done
+    # 2) lsh on C x T done
     # 3) svd on C x T
     # 4) distances on C x T
     
-    usrsim_UxT= pairwise.cosine_similarity(smallerUxT)
-    thsim_UxT= pairwise.cosine_similarity(smallerUxT.T)
-    # print(usrsim_UxT)
-    # print(thsim_UxT)
-    # print(usrsim_UxT.shape)
-    # print(thsim_UxT.shape)
+    #this becmes the estimation of itself
+    with torch.no_grad():
+        smallerUxT = torch.mm(p_param, q_param).detach().numpy()
 
-    
     #lsh on CxT
     for row in range(CxT.shape[0]):
         np.nan_to_num(CxT[row], copy=False, nan=0.0)
@@ -253,7 +243,62 @@ def main():
     newpatient_index = lshUxT[UxT[newpatient]].index(newpatient)
     newcond_index = lshCxT[CxT[newcond]].index(newcond)
     # print(newpatient_index, "  ", newcond_index)
-    
+
+    # SVD on C x T
+    p_param = torch.rand(smallerCxT.shape[0], num_latent_fact, requires_grad=True)
+    q_param = torch.rand(num_latent_fact, smallerCxT.shape[1], requires_grad=True)
+
+    target = torch.from_numpy(smallerCxT).float()
+
+    learning_rate = 0.1
+    n_epochs = 10
+
+    for epoch in range(n_epochs):
+
+        prediction = forward()
+        l = loss(target[target.nonzero(as_tuple=True)], prediction[target.nonzero(as_tuple=True)])
+
+        # print(f'loss={l}')
+        l.backward()
+
+        with torch.no_grad():
+            p_param -= learning_rate * p_param.grad
+            q_param -= learning_rate * q_param.grad
+            # print(q_param.grad)
+            p_param.grad.zero_()
+            q_param.grad.zero_()
+
+        if epoch == 10000:
+            learning_rate = 0.1
+        if epoch == 18000:
+            learning_rate = 0.01
+
+    # with torch.no_grad():
+    #     x_hat = torch.mm(p_param, q_param).detach().numpy()
+
+    # # print(x_hat)
+    # print("\n\n")
+    # a = loss(smallerCxT[2][np.nonzero(smallerCxT[2])], x_hat[2][np.nonzero(smallerCxT[2])])
+    # print(f'{smallerCxT[2][np.nonzero(smallerCxT[2])]}\n{x_hat[2][np.nonzero(smallerCxT[2])]}')
+    # print(a)
+    # print("\n\n")
+    # a = loss(smallerCxT[5][np.nonzero(smallerCxT[5])], x_hat[5][np.nonzero(smallerCxT[5])])
+    # print(f'{smallerCxT[5][np.nonzero(smallerCxT[5])]}\n{x_hat[5][np.nonzero(smallerCxT[5])]}')
+    # print(a)
+    # print("\n\n")
+    # a = loss(smallerCxT[0][np.nonzero(smallerCxT[0])], x_hat[0][np.nonzero(smallerCxT[0])])
+    # print(f'{smallerCxT[0][np.nonzero(smallerCxT[0])]}\n{x_hat[0][np.nonzero(smallerCxT[0])]}')
+    # print(a)
+
+    with torch.no_grad():
+        smallerCxT = torch.mm(p_param, q_param).detach().numpy()
+    # print(smallerCxT, "\n", smallerCxT.shape)
+
+    # usrsim_UxT= pairwise.cosine_similarity(smallerUxT)
+    # thsim_UxT= pairwise.cosine_similarity(smallerUxT.T)
+
+    # condsim_CxT= pairwise.cosine_similarity(smallerCxT)
+    # thsim_CxT= pairwise.cosine_similarity(smallerCxT.T)
     
 
 
