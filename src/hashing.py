@@ -1,6 +1,6 @@
 import json
 from random import shuffle
-from re import X
+from re import T, X
 import numpy as np
 from numpy.core.fromnumeric import shape
 from sklearn.metrics import mean_squared_error, pairwise
@@ -19,8 +19,8 @@ from torch.utils.data import Dataset, DataLoader
 datapath = "../data/patients.json"
 
 # for lsh
-num_hash_tables = 3
-hash_dimension = 5
+num_hash_tables = 5
+hash_dimension = 10
 
 class HashTable:
     def __init__(self, hash_size, inp_dimensions):
@@ -131,8 +131,7 @@ def main():
     for i in range(len(conditions)):
         for k in range(len(therapies)):
             if isinstance(CxT[i][k], np.ndarray):
-                print("ciao")
-                CxT = np.nanmean(CxT)
+                CxT[i][k] = np.nanmean(CxT[i][k])
 
     newpatient = int(sys.argv[1])
     newcond = int(sys.argv[2])
@@ -143,12 +142,12 @@ def main():
 
     #input nxm
     #nxk, k, kxm
-    u, s, vh = randomized_svd(smallerUxT, n_components=20, n_iter=2, random_state=42)
-    s = np.diag(s)
-    q = np.dot(s, vh)
-    # print(f'SVD\n{u}\n{s}\n{vh}')
-    print(f'SVD\n{u.shape}\n{s.shape}\n{vh.shape}')
-    print(f'SVD\n{u.shape}\n{q.shape}')
+    # u, s, vh = randomized_svd(smallerUxT, n_components=20, n_iter=2, random_state=42)
+    # s = np.diag(s)
+    # q = np.dot(s, vh)
+    # # print(f'SVD\n{u}\n{s}\n{vh}')
+    # print(f'SVD\n{u.shape}\n{s.shape}\n{vh.shape}')
+    # print(f'SVD\n{u.shape}\n{q.shape}')
 
     # x_reconstr = np.dot(u, q)
     # nonzero_UxT = smallerUxT[smallerUxT.nonzero()]
@@ -161,7 +160,7 @@ def main():
     #     if(smallerUxT[0][i] == 0):
     #         print(smallerUxT[0][i],"  ",b[0][i])
 
-    num_latent_fact = 20
+    num_latent_fact = 100
   
     
     # p_param = torch.from_numpy(u).float()
@@ -169,16 +168,22 @@ def main():
 
     # p_param.requires_grad = True
     # q_param.requires_grad = True
-    p_param = torch.randn(smallerUxT.shape[0], num_latent_fact, requires_grad=True)
-    q_param = torch.randn(num_latent_fact, smallerUxT.shape[1], requires_grad=True)
+
+    # p_param = torch.randn(smallerUxT.shape[0], num_latent_fact, requires_grad=True)
+    # q_param = torch.randn(num_latent_fact, smallerUxT.shape[1], requires_grad=True)
+
+    p_param = torch.rand(smallerUxT.shape[0], num_latent_fact, requires_grad=True)
+    q_param = torch.rand(num_latent_fact, smallerUxT.shape[1], requires_grad=True)
 
     target = torch.from_numpy(smallerUxT).float()
 
-    def forward():
-        return torch.mm(p_param, q_param)
+    def forward():#B_global è una matrice con elementi tutti uguali, corrispondenti al bias globale(mu), 
+        #B_user è una matr con elementi uguali sulle righe, ogni riga corrispone al bias dell'utente
+        #B_item è una matr con elementi uguali sulle colonne, ogni colonna corrisponde al bias dell'te
+        return torch.mm(p_param, q_param)#+B_global+B_user+B_item
 
     learning_rate = 1
-    n_epochs = 20000
+    n_epochs = 100
 
     def loss(y, y_pred):
         return ((y_pred - y)**2).mean()
@@ -202,24 +207,55 @@ def main():
             learning_rate = 0.1
         if epoch == 18000:
             learning_rate = 0.01
-        
             
     
-    with torch.no_grad():
-        x_hat = torch.mm(p_param, q_param).detach().numpy()
+    # with torch.no_grad():
+    #     x_hat = torch.mm(p_param, q_param).detach().numpy()
 
-    print(x_hat)
-    print("\n\n")
-    a = loss(smallerUxT[2][np.nonzero(smallerUxT[2])], x_hat[2][np.nonzero(smallerUxT[2])])
-    print(f'{smallerUxT[2][np.nonzero(smallerUxT[2])]}\n{x_hat[2][np.nonzero(smallerUxT[2])]}')
-    print(a)
-    print("\n\n")
-    a = loss(smallerUxT[5][np.nonzero(smallerUxT[5])], x_hat[5][np.nonzero(smallerUxT[5])])
-    print(f'{smallerUxT[5][np.nonzero(smallerUxT[5])]}\n{x_hat[5][np.nonzero(smallerUxT[5])]}')
-    print(a)
-    print("\n\n")
-    a = loss(smallerUxT[0][np.nonzero(smallerUxT[0])], x_hat[0][np.nonzero(smallerUxT[0])])
-    print(f'{smallerUxT[0][np.nonzero(smallerUxT[0])]}\n{x_hat[0][np.nonzero(smallerUxT[0])]}')
-    print(a)
+    # print(x_hat)
+    # print("\n\n")
+    # a = loss(smallerUxT[2][np.nonzero(smallerUxT[2])], x_hat[2][np.nonzero(smallerUxT[2])])
+    # print(f'{smallerUxT[2][np.nonzero(smallerUxT[2])]}\n{x_hat[2][np.nonzero(smallerUxT[2])]}')
+    # print(a)
+    # print("\n\n")
+    # a = loss(smallerUxT[5][np.nonzero(smallerUxT[5])], x_hat[5][np.nonzero(smallerUxT[5])])
+    # print(f'{smallerUxT[5][np.nonzero(smallerUxT[5])]}\n{x_hat[5][np.nonzero(smallerUxT[5])]}')
+    # print(a)
+    # print("\n\n")
+    # a = loss(smallerUxT[0][np.nonzero(smallerUxT[0])], x_hat[0][np.nonzero(smallerUxT[0])])
+    # print(f'{smallerUxT[0][np.nonzero(smallerUxT[0])]}\n{x_hat[0][np.nonzero(smallerUxT[0])]}')
+    # print(a)
+
+    
+
+    # 1) cosine distances U x T
+    # 2) lsh on C x T
+    # 3) svd on C x T
+    # 4) distances on C x T
+    
+    usrsim_UxT= pairwise.cosine_similarity(smallerUxT)
+    thsim_UxT= pairwise.cosine_similarity(smallerUxT.T)
+    # print(usrsim_UxT)
+    # print(thsim_UxT)
+    # print(usrsim_UxT.shape)
+    # print(thsim_UxT.shape)
+
+    
+    #lsh on CxT
+    for row in range(CxT.shape[0]):
+        np.nan_to_num(CxT[row], copy=False, nan=0.0)
+        lshCxT[CxT[row]] = row
+    
+    smallerCxT = np.array( [CxT[i] for i in lshCxT[CxT[newcond]]] )
+    print(f'LSH bucket dim={len(lshCxT[CxT[newcond]])}, \n {smallerCxT}')
+
+    #indice di newpatient/cond on the new UxT table -> smaller UxT
+    newpatient_index = lshUxT[UxT[newpatient]].index(newpatient)
+    newcond_index = lshCxT[CxT[newcond]].index(newcond)
+    # print(newpatient_index, "  ", newcond_index)
+    
+    
+
+
 if __name__=="__main__":
     main()
