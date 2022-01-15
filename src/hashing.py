@@ -1,6 +1,6 @@
 import json
 from random import shuffle
-from re import T, X
+from re import M, T, X
 import numpy as np
 from numpy.core.fromnumeric import shape
 from sklearn.metrics import mean_squared_error, pairwise
@@ -19,8 +19,15 @@ from torch.utils.data import Dataset, DataLoader
 datapath = "../data/patients.json"
 
 # for lsh
-num_hash_tables = 5
+num_hash_tables = 10
 hash_dimension = 10
+
+#clipping factor
+c = 10
+
+n_epochs = 1000
+
+num_latent_fact = 100
 
 class HashTable:
     def __init__(self, hash_size, inp_dimensions):
@@ -159,7 +166,6 @@ def main():
     #     if(smallerUxT[0][i] == 0):
     #         print(smallerUxT[0][i],"  ",b[0][i])
 
-    num_latent_fact = 100
     
     # p_param = torch.from_numpy(u).float()
     # q_param = torch.from_numpy(q).float()
@@ -175,16 +181,16 @@ def main():
 
     target = torch.from_numpy(smallerUxT).float()
 
+    
     def forward():#B_global è una matrice con elementi tutti uguali, corrispondenti al bias globale(mu), 
         #B_user è una matr con elementi uguali sulle righe, ogni riga corrispone al bias dell'utente
         #B_item è una matr con elementi uguali sulle colonne, ogni colonna corrisponde al bias dell'te
         return torch.mm(p_param, q_param)#+B_global+B_user+B_item
 
-    learning_rate = 1
-    n_epochs = 10
-
     def loss(y, y_pred):
         return ((y_pred - y)**2).mean()
+
+    learning_rate = 1
 
     for epoch in range(n_epochs):
 
@@ -195,16 +201,45 @@ def main():
         l.backward()
 
         with torch.no_grad():
+            if (torch.norm(p_param.grad) > c):
+                p_param.grad = c*p_param.grad/torch.norm(p_param.grad)
+            if (torch.norm(q_param.grad) > c):
+                q_param.grad = c*q_param.grad/torch.norm(q_param.grad)
             p_param -= learning_rate * p_param.grad
             q_param -= learning_rate * q_param.grad
             # print(q_param.grad)
             p_param.grad.zero_()
             q_param.grad.zero_()
 
-        if epoch == 10000:
-            learning_rate = 0.1
-        if epoch == 18000:
-            learning_rate = 0.01
+            # if epoch == 8000 or epoch == 9900: #normalize
+            #     m = torch.max(p_param)
+            #     n = torch.min(p_param)
+            #     for i in range(p_param.size()[0]):
+            #         for i2 in range(p_param.size()[1]):
+            #             p_param[i][i2] = (p_param[i][i2] - n) / (m - n)
+
+            #     m = torch.max(q_param)
+            #     n = torch.min(q_param)
+            #     for i in range(q_param.size()[0]):
+            #         for i2 in range(q_param.size()[1]):
+            #             q_param[i][i2] = (q_param[i][i2] - n) / (m - n)
+            #     print(q_param, p_param)
+
+            # if epoch == 9900:
+            #     for i in p_param:
+            #         for el in i:
+            #             if el > 1:
+            #                 el = 0.99
+            #             elif el < 0:
+            #                 el = 0.01
+            #     for i in q_param:
+            #         for el in i:
+            #             if el > 1:
+            #                 el = 0.99
+            #             elif el < 0:
+            #                 el = 0.01
+
+
             
     # with torch.no_grad():
     #     x_hat = torch.mm(p_param, q_param).detach().numpy()
@@ -224,12 +259,14 @@ def main():
 
     # 1) cosine distances U x T done
     # 2) lsh on C x T done
-    # 3) svd on C x T
-    # 4) distances on C x T
+    # 3) svd on C x T done
+    # 4) distances on C x T done
+    # 5) clipping done
     
     #this becmes the estimation of itself
     with torch.no_grad():
         smallerUxT = torch.mm(p_param, q_param).detach().numpy()
+    # print(smallerUxT, "\n", smallerUxT.shape)
 
     #lsh on CxT
     for row in range(CxT.shape[0]):
@@ -250,8 +287,7 @@ def main():
 
     target = torch.from_numpy(smallerCxT).float()
 
-    learning_rate = 0.1
-    n_epochs = 10
+    learning_rate = 1
 
     for epoch in range(n_epochs):
 
@@ -262,16 +298,25 @@ def main():
         l.backward()
 
         with torch.no_grad():
+            if (torch.norm(p_param.grad) > c):
+                p_param.grad = c*p_param.grad/torch.norm(p_param.grad)
+            if (torch.norm(q_param.grad) > c):
+                q_param.grad = c*q_param.grad/torch.norm(q_param.grad)
+
+            # for i in range(len(p_param[1:])):
+            #     for j in range(len(p_param[:1])):
+            #                    p_param[i][j]=(p_param[i][j]-min(p_param).item())/(max(p_param).item()-min(p_param).item())
+            
             p_param -= learning_rate * p_param.grad
             q_param -= learning_rate * q_param.grad
             # print(q_param.grad)
             p_param.grad.zero_()
             q_param.grad.zero_()
 
-        if epoch == 10000:
-            learning_rate = 0.1
-        if epoch == 18000:
-            learning_rate = 0.01
+        # if epoch == 10000:
+        #     learning_rate = 0.1
+        # if epoch == 18000:
+        #     learning_rate = 0.01
 
     # with torch.no_grad():
     #     x_hat = torch.mm(p_param, q_param).detach().numpy()
@@ -294,13 +339,49 @@ def main():
         smallerCxT = torch.mm(p_param, q_param).detach().numpy()
     # print(smallerCxT, "\n", smallerCxT.shape)
 
-    # usrsim_UxT= pairwise.cosine_similarity(smallerUxT)
+    usrsim_UxT= pairwise.cosine_similarity(smallerUxT)
     # thsim_UxT= pairwise.cosine_similarity(smallerUxT.T)
 
-    # condsim_CxT= pairwise.cosine_similarity(smallerCxT)
+    condsim_CxT= pairwise.cosine_similarity(smallerCxT)
     # thsim_CxT= pairwise.cosine_similarity(smallerCxT.T)
-    
+
+
+    res = []
+    for th_i in range(len(therapies)):
+        score = np.sum(usrsim_UxT[newpatient_index] * smallerUxT.T[th_i]) / np.sum(usrsim_UxT[newpatient_index]) + np.sum(condsim_CxT[newcond_index] * smallerCxT.T[th_i]) / np.sum(condsim_CxT[newcond_index])
+        # print(score)
+        res.append((th_i, score))
+    res.sort(key=lambda tup: tup[1], reverse=True)
+    k = 5
+    for count, (i, val) in enumerate(res[:k]):
+        print(f'#{count} -> {therapies[i]["name"]} -> score: {val:.5f}\n')
+
+
+    #questa roba è malvagia, fa porprio schifo
+    # k = 10 #find the indices of the k max values in array - It works https://www.kite.com/python/answers/how-to-find-the-n-maximum-indices-of-a-numpy-array-in-python
+    # idx=np.argpartition(smallerCxT[newcond_index], len(smallerCxT[newcond_index]) - k)[-k:]
+    # bestth_i = idx[np.argsort((-smallerCxT[newcond_index])[idx])]
+
+    # res = []
+    # for i in bestth_i:
+    #     # if smallerUxT[newpatient_index][i] > 1:
+    #     #     smallerUxT[newpatient_index][i] = 0.99
+    #     res.append( (i, smallerUxT[newpatient_index][i]) )
+    # res.sort(key=lambda tup: tup[1], reverse=True)
+
+    # print(f'\n{patients[newpatient]["name"]}, condition: {conditions[newcond]["name"]}\n')
+    # k = 5
+    # for count, (i, val) in enumerate(res[:k]):
+    #     print(f'#{count} -> {therapies[i]["name"]} ->{val:.5f}\n')
 
 
 if __name__=="__main__":
     main()
+
+# z -> M(i, j)
+# for each z in M
+#     z = (z - min(M)) / (max(M) - min(M))
+# https://developers.google.com/machine-learning/data-prep/transform/normalization
+# https://stats.stackexchange.com/questions/12200/normalizing-variables-for-svd-pca
+
+# punteggio = sum(usrsimUxT[user] * smallerUxT.T[therapy]) / sum(usrsimUxT[user]) + sum(condsimCxT[cond] * smallerCxT.T[therapy]) / sum(condsimCxT[cond])
