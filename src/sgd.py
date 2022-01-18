@@ -16,16 +16,20 @@ import math
 from torch.nn.modules.module import Module
 from torch.utils.data import Dataset, DataLoader
 
-datapath = "../data/patients.json"
+# datapath = "../data/patients.json"
+datapath = "../data/datasetB.json"
+
+cured = 'isCured'
+# cured= 'cured'
 
 # for lsh
-num_hash_tables = 10
-hash_dimension = 10
+num_hash_tables = 20
+hash_dimension = 20
 
 #clipping factor
 c = 10
 
-n_epochs = 10
+n_epochs = 20
 
 num_latent_fact = 100
 
@@ -96,7 +100,7 @@ def main():
 
         # populate U x T
         for tr in pat["trials"]: #patient therapy matrix
-            UxT[int(pat["id"])][int(tr["therapy"])] = float(tr["successful"]) / 100 #since i do /100 it doesnt need normalization
+            UxT[int(pat["id"])][int(tr["therapy"][2:])-1] = float(tr["successful"]) / 100 #since i do /100 it doesnt need normalization
 
         np.nan_to_num(UxT[int(pat["id"])], copy=False, nan=0.0)
         lshUxT[UxT[int(pat["id"])]] = int(pat["id"])
@@ -115,22 +119,21 @@ def main():
             # UxC[int(pat["id"])][int(cd["id"])] = 1.0
 
             # C x T contains ratings of therapies for cured conditions only
-            if cd["cured"] != "NULL":
+            if cd["isCured"] != "NULL":
                 for tr in pat["trials"]: #for each cured condition
 
-                    if tr["condition"] == cd["id"]: #insert the rating for the therapies that were tried
-                        
-                        if isinstance(CxT[int(cd["id"])][int(tr["therapy"])], np.ndarray):
-                            np.append(CxT[int(cd["id"])][int(tr["therapy"])], float(tr["successful"]) / 100)
+                    if tr["condition"][2:] == cd["id"][2:]: #insert the rating for the therapies that were tried
+                        if isinstance(CxT[int(cd["kind"][4:])-1][int(tr["therapy"][2:])-1], np.ndarray):
+                            np.append(CxT[int(cd["kind"][4:])-1][int(tr["therapy"][2:])-1], float(tr["successful"]) / 100)
 
                         else:
-                            if ~np.isnan(CxT[int(cd["id"])][int(tr["therapy"])]):
+                            if ~np.isnan(CxT[int(cd["kind"][4:])-1][int(tr["therapy"][2:])-1]):
 
-                                CxT[int(cd["id"])][int(tr["therapy"])] = np.array( CxT[int(cd["id"])][int(tr["therapy"])] )
-                                np.append(CxT[int(cd["id"])][int(tr["therapy"])], float(tr["successful"]) / 100)
+                                CxT[int(cd["kind"][4:])-1][int(tr["therapy"][2:])-1] = np.array( CxT[int(cd["kind"][4:])-1][int(tr["therapy"][2:])-1] )
+                                np.append(CxT[int(cd["kind"][4:])-1][int(tr["therapy"][2:])-1], float(tr["successful"]) / 100)
                             
                             else:
-                                CxT[int(cd["id"])][int(tr["therapy"])] = float(tr["successful"]) / 100
+                                CxT[int(cd["kind"][4:])-1][int(tr["therapy"][2:])-1] = float(tr["successful"]) / 100
                                 
                         #TO DO : MANAGE DOUBLES (average, weighted average)
 
@@ -141,6 +144,10 @@ def main():
                 CxT[i][k] = np.nanmean(CxT[i][k])
 
     newpatient = int(sys.argv[1])
+    # if sys.argv[2] != "../data/patients.json":
+    #     newcond = int(sys.argv[2][2:])
+    # else:
+    #     newcond = int(sys.argv[2])
     newcond = int(sys.argv[2])
 
     smallerUxT = np.array( [UxT[i] for i in lshUxT[UxT[newpatient]]] )
@@ -176,102 +183,61 @@ def main():
     # p_param = torch.randn(smallerUxT.shape[0], num_latent_fact, requires_grad=True)
     # q_param = torch.randn(num_latent_fact, smallerUxT.shape[1], requires_grad=True)
 
-    # bias matrix UxT
-    muUxT = smallerUxT[np.nonzero(smallerUxT)].mean()
-    # muitemUxT = [smallerUxT.T[item][smallerUxT.T[item].nonzero()] for item in range(len(therapies))]
-    # muusrUxT = [smallerUxT[item][smallerUxT[item].nonzero()] for item in range(len(patients))]
-
     p_param = torch.rand(smallerUxT.shape[0], num_latent_fact, requires_grad=True)
     q_param = torch.rand(num_latent_fact, smallerUxT.shape[1], requires_grad=True)
-
-    target = torch.from_numpy(smallerUxT).float()
-
-    
-    def forward():#B_global è una matrice con elementi tutti uguali, corrispondenti al bias globale(mu), 
-        #B_user è una matr con elementi uguali sulle righe, ogni riga corrispone al bias dell'utente
-        #B_item è una matr con elementi uguali sulle colonne, ogni colonna corrisponde al bias dell'te
-        return torch.mm(p_param, q_param)#+B_global+B_user+B_item
 
     def loss(y, y_pred):
         return ((y_pred - y)**2).mean()
 
-    learning_rate = 1
+    learning_rate = 0.01
+
+    i_usr_pred, i_item_pred = np.nonzero(smallerUxT)
+
+    muUxT = np.array(smallerUxT[np.nonzero(smallerUxT)].mean())
+    muUxT = torch.from_numpy(muUxT).float()
+    bu = torch.zeros(len(patients), requires_grad=True)
+    bi = torch.zeros(len(therapies), requires_grad=True)
 
     for epoch in range(n_epochs):
-
-        prediction = forward()
-        l = loss(target[target.nonzero(as_tuple=True)], prediction[target.nonzero(as_tuple=True)])
-
-        # print(f'loss={l}')
-        l.backward()
-
-        with torch.no_grad():
-            if (torch.norm(p_param.grad) > c):
-                p_param.grad = c*p_param.grad/torch.norm(p_param.grad)
-            if (torch.norm(q_param.grad) > c):
-                q_param.grad = c*q_param.grad/torch.norm(q_param.grad)
-            p_param -= learning_rate * p_param.grad
-            q_param -= learning_rate * q_param.grad
-            # print(q_param.grad)
-            p_param.grad.zero_()
-            q_param.grad.zero_()
-
-            # if epoch == 8000 or epoch == 9900: #normalize
-            #     m = torch.max(p_param)
-            #     n = torch.min(p_param)
-            #     for i in range(p_param.size()[0]):
-            #         for i2 in range(p_param.size()[1]):
-            #             p_param[i][i2] = (p_param[i][i2] - n) / (m - n)
-
-            #     m = torch.max(q_param)
-            #     n = torch.min(q_param)
-            #     for i in range(q_param.size()[0]):
-            #         for i2 in range(q_param.size()[1]):
-            #             q_param[i][i2] = (q_param[i][i2] - n) / (m - n)
-            #     print(q_param, p_param)
-
-            # if epoch == 9900:
-            #     for i in p_param:
-            #         for el in i:
-            #             if el > 1:
-            #                 el = 0.99
-            #             elif el < 0:
-            #                 el = 0.01
-            #     for i in q_param:
-            #         for el in i:
-            #             if el > 1:
-            #                 el = 0.99
-            #             elif el < 0:
-            #                 el = 0.01
-
-
+        for (i, j) in list(zip(i_usr_pred, i_item_pred)):
             
-    # with torch.no_grad():
-    #     x_hat = torch.mm(p_param, q_param).detach().numpy()
-    # print(x_hat)
-    # print("\n\n")
-    # a = loss(smallerUxT[2][np.nonzero(smallerUxT[2])], x_hat[2][np.nonzero(smallerUxT[2])])
-    # print(f'{smallerUxT[2][np.nonzero(smallerUxT[2])]}\n{x_hat[2][np.nonzero(smallerUxT[2])]}')
-    # print(a)
-    # print("\n\n")
-    # a = loss(smallerUxT[5][np.nonzero(smallerUxT[5])], x_hat[5][np.nonzero(smallerUxT[5])])
-    # print(f'{smallerUxT[5][np.nonzero(smallerUxT[5])]}\n{x_hat[5][np.nonzero(smallerUxT[5])]}')
-    # print(a)
-    # print("\n\n")
-    # a = loss(smallerUxT[0][np.nonzero(smallerUxT[0])], x_hat[0][np.nonzero(smallerUxT[0])])
-    # print(f'{smallerUxT[0][np.nonzero(smallerUxT[0])]}\n{x_hat[0][np.nonzero(smallerUxT[0])]}')
-    # print(a)
+            app = np.array(smallerUxT[i][j])
+            target = torch.from_numpy(app).float()
 
-    # 1) cosine distances U x T done
-    # 2) lsh on C x T done
-    # 3) svd on C x T done
-    # 4) distances on C x T done
-    # 5) clipping done
-    
-    #this becmes the estimation of itself
+            #p = n x k, q = k x m, matrice iniziale = n x m
+            prediction = torch.dot(p_param[i], torch.t(q_param)[j])
+            prediction = prediction + muUxT + bu[i] + bi[j]
+
+            error = loss(target, prediction)
+
+            error.backward()
+            
+            # print(f'loss={error}')
+
+            with torch.no_grad():
+                if (torch.norm(p_param.grad[i]) > c):
+                    p_param.grad[i] = c*p_param.grad[i]/torch.norm(p_param.grad[i])
+                if (torch.norm(torch.t(q_param.grad)[j]) > c):
+                    torch.t(q_param.grad)[j] = c*torch.t(q_param.grad)[j]/torch.norm(torch.t(q_param.grad)[j])
+                p_param[i] -= learning_rate * p_param.grad[i]
+                torch.t(q_param)[j] -= learning_rate * torch.t(q_param.grad)[j]
+                p_param.grad.zero_()
+                q_param.grad.zero_()
+
+                #update bias
+                bu[i] -= learning_rate * bu.grad[i]
+                bi[j] -= learning_rate * bi.grad[j]
+                bu.grad.zero_()
+                bi.grad.zero_()
+
     with torch.no_grad():
-        smallerUxT = torch.mm(p_param, q_param).detach().numpy()
-    # print(smallerUxT, "\n", smallerUxT.shape)
+        uxt_hat = torch.mm(p_param, q_param)
+        for i in range(smallerUxT.shape[0]):
+            for j in range(smallerUxT.shape[1]):
+                uxt_hat[i][j] = uxt_hat[i][j] + muUxT + bu[i] + bi[j]
+        print(f'\n\n\nloss={loss(smallerUxT[np.nonzero(smallerUxT)], uxt_hat[np.nonzero(smallerUxT)])}\n\n')
+        smallerUxT = uxt_hat.detach().numpy()
+        # l = loss(target[target.nonzero(as_tuple=True)], prediction[target.nonzero(as_tuple=True)])
 
     #lsh on CxT
     for row in range(CxT.shape[0]):
@@ -290,59 +256,51 @@ def main():
     p_param = torch.rand(smallerCxT.shape[0], num_latent_fact, requires_grad=True)
     q_param = torch.rand(num_latent_fact, smallerCxT.shape[1], requires_grad=True)
 
-    target = torch.from_numpy(smallerCxT).float()
+    learning_rate = 0.01
 
-    learning_rate = 1
+    i_usr_pred, i_item_pred = np.nonzero(smallerCxT)
+
+    app = np.array(smallerCxT[np.nonzero(smallerCxT)].mean())
+    muCxT = torch.from_numpy(app).float()
+    bu = torch.zeros(len(conditions), requires_grad=True)
+    bi = torch.zeros(len(therapies), requires_grad=True)
 
     for epoch in range(n_epochs):
-
-        prediction = forward()
-        l = loss(target[target.nonzero(as_tuple=True)], prediction[target.nonzero(as_tuple=True)])
-
-        # print(f'loss={l}')
-        l.backward()
-
-        with torch.no_grad():
-            if (torch.norm(p_param.grad) > c):
-                p_param.grad = c*p_param.grad/torch.norm(p_param.grad)
-            if (torch.norm(q_param.grad) > c):
-                q_param.grad = c*q_param.grad/torch.norm(q_param.grad)
-
-            # for i in range(len(p_param[1:])):
-            #     for j in range(len(p_param[:1])):
-            #                    p_param[i][j]=(p_param[i][j]-min(p_param).item())/(max(p_param).item()-min(p_param).item())
+        for (i, j) in list(zip(i_usr_pred, i_item_pred)):
             
-            p_param -= learning_rate * p_param.grad
-            q_param -= learning_rate * q_param.grad
-            # print(q_param.grad)
-            p_param.grad.zero_()
-            q_param.grad.zero_()
+            app = np.array(smallerCxT[i][j])
+            target = torch.from_numpy(app).float()
 
-        # if epoch == 10000:
-        #     learning_rate = 0.1
-        # if epoch == 18000:
-        #     learning_rate = 0.01
+            prediction = torch.dot(p_param[i], torch.t(q_param)[j])
+            prediction = prediction + muCxT + bu[i] + bi[j]
 
-    # with torch.no_grad():
-    #     x_hat = torch.mm(p_param, q_param).detach().numpy()
+            error = loss(target, prediction)
 
-    # # print(x_hat)
-    # print("\n\n")
-    # a = loss(smallerCxT[2][np.nonzero(smallerCxT[2])], x_hat[2][np.nonzero(smallerCxT[2])])
-    # print(f'{smallerCxT[2][np.nonzero(smallerCxT[2])]}\n{x_hat[2][np.nonzero(smallerCxT[2])]}')
-    # print(a)
-    # print("\n\n")
-    # a = loss(smallerCxT[5][np.nonzero(smallerCxT[5])], x_hat[5][np.nonzero(smallerCxT[5])])
-    # print(f'{smallerCxT[5][np.nonzero(smallerCxT[5])]}\n{x_hat[5][np.nonzero(smallerCxT[5])]}')
-    # print(a)
-    # print("\n\n")
-    # a = loss(smallerCxT[0][np.nonzero(smallerCxT[0])], x_hat[0][np.nonzero(smallerCxT[0])])
-    # print(f'{smallerCxT[0][np.nonzero(smallerCxT[0])]}\n{x_hat[0][np.nonzero(smallerCxT[0])]}')
-    # print(a)
+            error.backward()
+
+            with torch.no_grad():
+                if (torch.norm(p_param.grad[i]) > c):
+                    p_param.grad[i] = c*p_param.grad[i]/torch.norm(p_param.grad[i])
+                if (torch.norm(torch.t(q_param.grad)[j]) > c):
+                    torch.t(q_param.grad)[j] = c*torch.t(q_param.grad)[j]/torch.norm(torch.t(q_param.grad)[j])
+                p_param[i] -= learning_rate * p_param.grad[i]
+                torch.t(q_param)[j] -= learning_rate * torch.t(q_param.grad)[j]
+                p_param.grad.zero_()
+                q_param.grad.zero_()
+
+                #update bias
+                bu[i] -= learning_rate * bu.grad[i]
+                bi[j] -= learning_rate * bi.grad[j]
+                bu.grad.zero_()
+                bi.grad.zero_()
 
     with torch.no_grad():
-        smallerCxT = torch.mm(p_param, q_param).detach().numpy()
-    # print(smallerCxT, "\n", smallerCxT.shape)
+        cxt_hat = torch.mm(p_param, q_param)
+        for i in range(smallerCxT.shape[0]):
+            for j in range(smallerCxT.shape[1]):
+                cxt_hat[i][j] = cxt_hat[i][j] + muCxT + bu[i] + bi[j]
+        print(f'\n\n\nloss={loss(smallerCxT[np.nonzero(smallerCxT)], cxt_hat[np.nonzero(smallerCxT)])}\n\n')
+        smallerCxT = cxt_hat.detach().numpy()
 
     usrsim_UxT= pairwise.cosine_similarity(smallerUxT)
     # thsim_UxT= pairwise.cosine_similarity(smallerUxT.T)
