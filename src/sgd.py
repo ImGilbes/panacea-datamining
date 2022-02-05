@@ -17,7 +17,7 @@ from torch.nn.modules.module import Module
 from torch.utils.data import Dataset, DataLoader
 
 # datapath = "../data/patients.json"
-datapath = "../data/datasetB.json"
+datapath = "../data/" + sys.argv[1]
 
 cured = 'isCured'
 # cured= 'cured'
@@ -29,9 +29,9 @@ hash_dimension = 20
 #clipping factor
 c = 10
 
-n_epochs = 20
+n_epochs = 50
 
-num_latent_fact = 100
+num_latent_fact = 40
 
 class HashTable:
     def __init__(self, hash_size, inp_dimensions):
@@ -143,12 +143,15 @@ def main():
             if isinstance(CxT[i][k], np.ndarray):
                 CxT[i][k] = np.nanmean(CxT[i][k])
 
-    newpatient = int(sys.argv[1])
-    # if sys.argv[2] != "../data/patients.json":
-    #     newcond = int(sys.argv[2][2:])
-    # else:
-    #     newcond = int(sys.argv[2])
-    newcond = int(sys.argv[2])
+    newpatient = int(sys.argv[2])
+    if sys.argv[2] != "../data/patients.json":
+        # newcond = int(sys.argv[3][2:])
+        for cond in patients[int(sys.argv[2])]["conditions"]:
+            if cond["id"] == sys.argv[3]:
+                newcond = int(cond["kind"][4:]) - 1
+    else:
+        newcond = int(sys.argv[3])
+    # newcond = int(sys.argv[3])
 
     smallerUxT = np.array( [UxT[i] for i in lshUxT[UxT[newpatient]]] )
     print(f'LSH bucket dim={len(lshUxT[UxT[newpatient]])}, \n {smallerUxT}')
@@ -244,7 +247,7 @@ def main():
         np.nan_to_num(CxT[row], copy=False, nan=0.0)
         lshCxT[CxT[row]] = row
     
-    smallerCxT = np.array( [CxT[i] for i in lshCxT[CxT[newcond]]] )
+    smallerCxT = np.array( [CxT[i-1] for i in lshCxT[CxT[newcond]]] )
     print(f'LSH bucket dim={len(lshCxT[CxT[newcond]])}, \n {smallerCxT}')
 
     #indice di newpatient/cond on the new UxT table -> smaller UxT
