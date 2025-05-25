@@ -1,0 +1,150 @@
+
+name: OSV Vulnerability Scanner
+
+on:
+  workflow_dispatch:
+    inputs:
+      scan_path:
+        description: 'Directory path to scan (relative to repository root)'
+        required: false
+        default: '.'
+      output_format:
+        description: 'Output format (json, table, markdown)'
+        required: false
+        default: 'json'
+        type: choice
+        options:
+        - json
+        - table
+        - markdown
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  OSV_SCANNER_VERSION: 'latest'
+  SCAN_RESULTS_FILE: 'osv-scan-results'
+
+jobs:
+  osv-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install OSV Scanner
+      run: |
+        curl -L -o osv-scanner https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64
+        chmod +x osv-scanner
+        sudo mv osv-scanner /usr/local/bin/
+
+    - name: Run OSV Scanner
+      id: osv_scan
+      run: |
+        echo "Running OSV Scanner on directory: ${{ inputs.scan_path || '.' }}"
+        
+        # Run OSV scanner and capture exit code
+        if ./osv-scanner --format=${{ inputs.output_format || 'json' }} --output=${{ env.SCAN_RESULTS_FILE }}.${{ inputs.output_format || 'json' }} ${{ inputs.scan_path || '.' }}; then
+          echo "VULNERABILITIES_FOUND=false" >> $GITHUB_ENV
+          echo "OSV scan completed successfully - no vulnerabilities found"
+        else
+          echo "VULNERABILITIES_FOUND=true" >> $GITHUB_ENV
+          echo "OSV scan detected vulnerabilities"
+        fi
+      continue-on-error: true
+
+    - name: Display scan results
+      if: always()
+      run: |
+        echo "=== OSV Scanner Results ==="
+        if [ -f "${{ env.SCAN_RESULTS_FILE }}.${{ inputs.output_format || 'json' }}" ]; then
+          cat ${{ env.SCAN_RESULTS_FILE }}.${{ inputs.output_format || 'json' }}
+        else
+          echo "No scan results file found"
+        fi
+
+    - name: Process vulnerability results
+      if: env.VULNERABILITIES_FOUND == 'true'
+      run: |
+        # Count vulnerabilities if JSON format
+        if [ "${{ inputs.output_format || 'json' }}" = "json" ] && [ -f "${{ env.SCAN_RESULTS_FILE }}.json" ]; then
+          VULN_COUNT=$(jq '.results | length' ${{ env.SCAN_RESULTS_FILE }}.json 2>/dev/null || echo "0")
+          echo "VULNERABILITY_COUNT=$VULN_COUNT" >> $GITHUB_ENV
+          echo "Found $VULN_COUNT vulnerabilities"
+        fi
+
+    - name: Create vulnerability summary
+      if: env.VULNERABILITIES_FOUND == 'true'
+      run: |
+        echo "## 🚨 Security Vulnerabilities Detected" >> vulnerability_summary.md
+        echo "" >> vulnerability_summary.md
+        echo "OSV Scanner has detected security vulnerabilities in your dependencies." >> vulnerability_summary.md
+        echo "" >> vulnerability_summary.md
+        
+        if [ "${{ env.VULNERABILITY_COUNT }}" != "" ]; then
+          echo "**Total vulnerabilities found:** ${{ env.VULNERABILITY_COUNT }}" >> vulnerability_summary.md
+          echo "" >> vulnerability_summary.md
+        fi
+        
+        echo "**Scan timestamp:** $(date)" >> vulnerability_summary.md
+        echo "**Scanned directory:** ${{ inputs.scan_path || '.' }}" >> vulnerability_summary.md
+        echo "" >> vulnerability_summary.md
+        echo "Please review the detailed scan results in the workflow artifacts." >> vulnerability_summary.md
+
+    - name: Alert on vulnerabilities
+      if: env.VULNERABILITIES_FOUND == 'true'
+      run: |
+        echo "::error title=Security Vulnerabilities Detected::OSV Scanner found ${{ env.VULNERABILITY_COUNT || 'multiple' }} vulnerabilities in your dependencies. Check the scan results for details."
+        echo "::warning::Please review and address the detected vulnerabilities before proceeding."
+
+    - name: Upload scan results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: osv-scan-results-${{ github.run_number }}
+        path: |
+          ${{ env.SCAN_RESULTS_FILE }}.*
+          vulnerability_summary.md
+        retention-days: 30
+
+    - name: Comment on PR with results
+      if: github.event_name == 'pull_request' && env.VULNERABILITIES_FOUND == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          let comment = '## 🚨 OSV Scanner Results\n\n';
+          
+          if (fs.existsSync('vulnerability_summary.md')) {
+            const summary = fs.readFileSync('vulnerability_summary.md', 'utf8');
+            comment += summary;
+          } else {
+            comment += 'OSV Scanner detected vulnerabilities. Please check the workflow logs for details.';
+          }
+          
+          comment += '\n\n📋 Full scan results are available in the workflow artifacts.';
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+    - name: Fail workflow on vulnerabilities
+      if: env.VULNERABILITIES_FOUND == 'true'
+      run: |
+        echo "Failing workflow due to detected vulnerabilities"
+        exit 1
+
+    - name: Success notification
+      if: env.VULNERABILITIES_FOUND == 'false'
+      run: |
+        echo "::notice title=Security Scan Passed::OSV Scanner completed successfully with no vulnerabilities detected."
+
