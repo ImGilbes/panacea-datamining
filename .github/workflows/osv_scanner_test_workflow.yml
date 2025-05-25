@@ -105,7 +105,7 @@ jobs:
 
     - name: Upload scan results
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: osv-scan-results-${{ github.run_number }}
         path: |
